@@ -18,5 +18,6 @@
 
 int ar_init_debugfs(void);
 void ar_remove_debugfs(void);
+u32 get_regulation_time(void);
 
-#endif AR_DEBUGFS_H
+#endif /* AR_DEBUGFS_H */
