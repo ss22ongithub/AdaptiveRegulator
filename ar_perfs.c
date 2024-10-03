@@ -5,6 +5,32 @@
 #include <linux/perf_event.h>
 #include "ar_perfs.h"
 
+/**************************************************************************
+ * Perf Structure definitions 
+ **************************************************************************/
+
+
+static struct perf_event *llc_misses_event=NULL;
+static struct irq_work llc_miss_event_irq_work;
+
+
+/**************************************************************************
+ * Callbacks and Handlers
+ **************************************************************************/
+static u64 llc_overflow_count =0 ;
+static void llc_miss_event_irq_work_handler(struct irq_work *entry){
+    
+    BUG_ON(in_nmi() || !in_irq());
+
+    //llc_overflow_count   =  perf_event_count(llc_misses_event);
+    // trace_printk("ss22");
+    // pr_info("llc_misses_count=%lld\n",llc_misses_count);
+
+
+}
+u64 get_llc_ofc(void){
+    return llc_overflow_count;
+}
 
 /**************************************************************************
  * Perf Utils
@@ -62,7 +88,7 @@ void event_read_overflow_callback(struct perf_event *event,
                     struct perf_sample_data *data,
                     struct pt_regs *regs)
 {
-    //irq_work_queue(&llc_miss_event_irq_work);
+    irq_work_queue(&llc_miss_event_irq_work);
 }
 
 
@@ -77,5 +103,12 @@ void disable_event(struct perf_event *event){
     perf_event_disable(event);
     perf_event_release_kernel(event);
     pr_info("Perf event disabled\n");
+
+}
+
+void init_perf_workq(void){
+	/* initialize irq_work_queue */
+	pr_info("%s",__func__);
+    init_irq_work(&llc_miss_event_irq_work, llc_miss_event_irq_work_handler);
 
 }

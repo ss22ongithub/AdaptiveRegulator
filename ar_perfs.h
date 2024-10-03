@@ -14,4 +14,9 @@ inline void enable_event(struct perf_event *event);
 
 inline void disable_event(struct perf_event *event);
 
+void init_perf_workq(void);
+
+//Debug functions 
+u64 get_llc_ofc(void);
+
 #endif /*AR_PERFS_H*/

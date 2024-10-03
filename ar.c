@@ -94,7 +94,8 @@
 static int g_read_counter_id = PMU_LLC_MISS_COUNTER_ID;
 module_param(g_read_counter_id, hexint,  S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
 // static int g_period_us=1000;
-static u64 g_bw_setpoints_mb[MAX_NO_CPUS] = {5000,5000,5000, 5000, 5000, 5000}; /*Bandwidth setpoints in MB/s */
+static u64 g_bw_setpoints_mb[MAX_NO_CPUS] = {100,200,300, 400, 500, 600}; /*Bandwidth setpoints in MB/s */
+static u64 g_bw_max_mb[MAX_NO_CPUS] = {1000,1000,1000, 1000, 1000, 1000}; /*Bandwidth setpoints in MB/s */
 static ktime_t last_time;
 
 /**************************************************************************
@@ -124,13 +125,7 @@ struct perf_event *read_event; /* PMC: LLC misses */
 u32 g_read_count_new =0;
 u32 g_read_count_old =0;
 int cpu_id = 5;
-/**************************************************************************
- * Perf Structure definitions 
- **************************************************************************/
 
-
-static struct perf_event *llc_misses_event=NULL;
-static struct irq_work llc_miss_event_irq_work;
 // static struct core_info __percpu *core_info;
 
 
@@ -173,14 +168,6 @@ static inline void print_current_context(void)
  * Callbacks and Handlers
  **************************************************************************/
 
-static void llc_miss_event_irq_work_handler(struct irq_work *entry){
-    // trace_printk("%s: Enter\n",__func__);
-    // print_current_context();
-    // u64 count = perf_event_count(my_event);
-    u64 llc_misses_count =  perf_event_count(llc_misses_event);
-    trace_printk("%s: count = %llu\n", __func__,llc_misses_count);
-    // pr_info("llc_misses_count=%lld\n",llc_misses_count);
-}
 
 
 // static struct task_struct* thread_kt1;
@@ -220,13 +207,23 @@ static int do_pid_control(int error){
 
     ktime_t current_time  = ktime_get();
     u32 time_diff = ktime_to_ms(ktime_sub(current_time, last_time));
+    //error = setpoint bw - used bw 
+    if (error > 0 ){
+        // there is unused bw 
+
+    }else if (error < 0) {
+
+    }else {
+        // no difference 
+        return 0;
+    }
 
     /* Proportional term */
     int P = Kp*error;
 
     /* Integral term */
     integral += error*time_diff;
-    int I = Ki * integral/1000;
+    int I = Ki * integral/(1000);
 
     // /* Derivative term */
     // derivative = (error-last_error)/time_diff;
@@ -246,9 +243,11 @@ static enum hrtimer_restart ar_regu_timer_callback(struct hrtimer *timer)
 {
      /* do your timer stuff here */
 	// pr_info("%s:",__func__);
+
     /*Stop the counter*/
     read_event->pmu->stop(read_event, PERF_EF_UPDATE);
     g_read_count_new = perf_event_count(read_event);
+    
     s64 read_count_used = g_read_count_new - g_read_count_old;
 	s64 used_bw_mb = convert_events_to_mb(read_count_used);
 	g_read_count_old = g_read_count_new;
@@ -258,9 +257,14 @@ static enum hrtimer_restart ar_regu_timer_callback(struct hrtimer *timer)
     // update_error(error);
 
     s64 correction_mb = do_pid_control(error);
-    s64 read_event_new_budget = convert_mb_to_events(correction_mb);
-    trace_printk("read_count_used = %lld, used_bw_mb= %lld, error_mb=%lld, read_event_new_budget=%lld \n",read_count_used,used_bw_mb,error,read_event_new_budget);
 
+    s64 read_event_new_budget = convert_mb_to_events(g_bw_setpoints_mb[cpu_id]); //convert_mb_to_events(correction_mb);
+
+    // if (read_event_new_budget > g_bw_max_mb[cpu_id]  ){
+    //     read_event_new_budget = g_bw_max_mb[cpu_id];
+    // }
+    trace_printk("used_bw_mb= %lld, error_mb=%lld, setpoint_cpu_bw_mb=%lld,correction_mb=%lld \n",used_bw_mb,error,setpoint_cpu_bw_mb,correction_mb);
+    trace_printk("ovflo=%lld",get_llc_ofc());
     local64_set(&read_event->hw.period_left, read_event_new_budget);
 
 
@@ -313,8 +317,8 @@ static int __init ar_init (void ){
 	kthread_bind(thread_kt1, cpu_id);
     wake_up_process(thread_kt1);
 #endif
-    /* initialize irq_work_queue */
-    init_irq_work(&llc_miss_event_irq_work, llc_miss_event_irq_work_handler);
+    init_perf_workq();
+    
 
     hrtimer_init( &ar_regu_timer, CLOCK_MONOTONIC , HRTIMER_MODE_REL_PINNED);
     ar_regu_timer.function=&ar_regu_timer_callback;
