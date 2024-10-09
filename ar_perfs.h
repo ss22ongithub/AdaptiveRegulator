@@ -16,7 +16,15 @@ inline void disable_event(struct perf_event *event);
 
 void init_perf_workq(void);
 
+/* Getter setters for read event */
+
+struct perf_event* get_read_event(void);
+
+void set_read_event(struct perf_event* event);
+
+
 //Debug functions 
 u64 get_llc_ofc(void);
+
 
 #endif /*AR_PERFS_H*/

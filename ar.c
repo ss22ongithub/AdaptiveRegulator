@@ -51,8 +51,11 @@
 #endif
 #include <linux/sched.h>
 
+
 #include "ar_debugfs.h"
 #include "ar_perfs.h"
+#include "ar.h"
+
 
 /**************************************************************************
  * Public Definitions
@@ -62,6 +65,7 @@
 #define TIMEOUT_SEC  ( 5 )
 #define MAX_NO_CPUS 6
 
+#define DEBUG(x)
 
 
 /**************************************************************************
@@ -101,30 +105,12 @@ static ktime_t last_time;
 /**************************************************************************
  * Public Types
  **************************************************************************/
-/* percpu info */
-struct core_info {
-   
-    /* for control logic */
-    u32 read_budget;         /* assigned read budget */
-    u32 write_budget;        /* assigned write budged */
 
-    u32 read_count;
-    u32 write_count;
+static struct core_info* cinfo = NULL;
 
-    struct irq_work read_pending;  /* delayed work for NMIs */
-    struct perf_event *read_event; /* PMC: LLC misses */
-    
-    u32 budget_next; /* Per core budget for the NRT core for the next regulation interval , b__i_r */
-    
-    /* per-core hr timer */
-
-    struct hrtimer hr_timer;
-};
-/* TODO: Remove once core_info is used*/
-struct perf_event *read_event; /* PMC: LLC misses */
-u32 g_read_count_new =0;
-u32 g_read_count_old =0;
-int cpu_id = 5;
+struct core_info* get_core_info(void){
+    return cinfo;
+}
 
 // static struct core_info __percpu *core_info;
 
@@ -170,22 +156,40 @@ static inline void print_current_context(void)
 
 
 
-// static struct task_struct* thread_kt1;
+static struct task_struct* thread_kt1 = NULL;
 
-// static int thread_kt1_func(void * data){
-//     int cpunr = (unsigned long)data;
-//     pr_info("%s: Enter",__func__);
+static int thread_kt1_func(void * data){
+    int cpunr = (unsigned long)data;
+    pr_info("%s: Enter",__func__);
 
-//     while (!kthread_should_stop() && cpu_online(cpunr)) {
-//         pr_info("%s:Looping on CPU%d",__func__,smp_processor_id());
-//         msleep(2000);
-//         if (kthread_should_stop())
-//             break;
-//     }
+    
+    struct core_info *cinfo = get_core_info();//per_cpu_ptr(core_info, cpunr);
 
-//     pr_info("%s: Exit",__func__);
-//     return 0;
-// }
+    sched_set_fifo(current);
+
+    while (!kthread_should_stop() && cpu_online(cpunr)) {
+
+        DEBUG(trace_printk("wait an event\n"));
+        wait_event_interruptible(cinfo->throttle_evt,
+                     thread_kt1 ||
+                     kthread_should_stop());
+
+        DEBUG(trace_printk("got an event\n"));
+
+        if (kthread_should_stop())
+            break;
+
+        while (thread_kt1 && !kthread_should_stop())
+        {
+            smp_mb();
+            cpu_relax();
+            /* TODO: mwait */
+        }
+    }
+
+    pr_info("%s: Exit",__func__);
+    return 0;
+}
 
 /**************************************************************************
  * Other Utils
@@ -239,26 +243,32 @@ static int do_pid_control(int error){
     return out;
 
 }
+
+
+
+
 static enum hrtimer_restart ar_regu_timer_callback(struct hrtimer *timer)
 {
      /* do your timer stuff here */
 	// pr_info("%s:",__func__);
 
+    struct perf_event *read_event = get_read_event();
+    struct core_info *cinfo = get_core_info();
     /*Stop the counter*/
     read_event->pmu->stop(read_event, PERF_EF_UPDATE);
-    g_read_count_new = perf_event_count(read_event);
+    cinfo->g_read_count_new = perf_event_count(read_event);
     
-    s64 read_count_used = g_read_count_new - g_read_count_old;
+    s64 read_count_used = cinfo->g_read_count_new - cinfo->g_read_count_old;
 	s64 used_bw_mb = convert_events_to_mb(read_count_used);
-	g_read_count_old = g_read_count_new;
+	cinfo->g_read_count_old = cinfo->g_read_count_new;
 
-    s64 setpoint_cpu_bw_mb = g_bw_setpoints_mb[cpu_id];
+    s64 setpoint_cpu_bw_mb = g_bw_setpoints_mb[cinfo->cpu_id];
     s64 error = setpoint_cpu_bw_mb - used_bw_mb;
     // update_error(error);
 
     s64 correction_mb = do_pid_control(error);
 
-    s64 read_event_new_budget = convert_mb_to_events(g_bw_setpoints_mb[cpu_id]); //convert_mb_to_events(correction_mb);
+    s64 read_event_new_budget = convert_mb_to_events(g_bw_setpoints_mb[cinfo->cpu_id]); //convert_mb_to_events(correction_mb);
 
     // if (read_event_new_budget > g_bw_max_mb[cpu_id]  ){
     //     read_event_new_budget = g_bw_max_mb[cpu_id];
@@ -280,7 +290,6 @@ static enum hrtimer_restart ar_regu_timer_callback(struct hrtimer *timer)
 
 
 static struct hrtimer ar_regu_timer ;
-// static struct hrtimer ar_obs_timer;
 
 
 /**************************************************************************************************************************
@@ -291,34 +300,48 @@ static int __init ar_init (void ){
     
     pr_info("NR_CPUS: %d, online_cpus: %d\n", NR_CPUS, num_online_cpus());
 
+    cinfo = (struct core_info*)kzalloc(sizeof (struct core_info), GFP_KERNEL);
+
+    /*
+
+    u32 g_read_count_new;
+    u32 g_read_count_old;
+    int cpu_id;
+    wait_queue_head_t throttle_evt;
+    */
+
+    cinfo->cpu_id = 5;
+
 
     ar_init_debugfs();
 
-    read_event =  init_counter(cpu_id,
-                        convert_mb_to_events(g_bw_setpoints_mb[cpu_id]),
-                        g_read_counter_id,
-                        event_read_overflow_callback);
+    init_perf_workq();  
+
+    struct perf_event*  read_event =  init_counter(cinfo->cpu_id,
+                                    convert_mb_to_events(g_bw_setpoints_mb[cinfo->cpu_id]),
+                                    g_read_counter_id,
+                                    event_read_overflow_callback);
+                
 
     if (read_event == NULL){
 	    pr_err("read_event %p did not allocate ", read_event);
         return -1;
 	}
+   
 
+    set_read_event(read_event);
     enable_event(read_event);
     
+     
 
-#if 0
    thread_kt1 = kthread_create_on_node(thread_kt1_func,
-                                       (void *)((unsigned long)cpu_id),
+                                       (void *)((unsigned long)cinfo->cpu_id),
                                        cpu_to_node(cpu_id),
-                                       "kt/%d",cpu_id);
+                                       "kt/%d",cinfo->cpu_id);
 
 	BUG_ON(IS_ERR(thread_kt1));
 	kthread_bind(thread_kt1, cpu_id);
     wake_up_process(thread_kt1);
-#endif
-    init_perf_workq();
-    
 
     hrtimer_init( &ar_regu_timer, CLOCK_MONOTONIC , HRTIMER_MODE_REL_PINNED);
     ar_regu_timer.function=&ar_regu_timer_callback;
@@ -335,14 +358,17 @@ static int __init ar_init (void ){
 
 static void __exit ar_exit( void )
 {
+    struct perf_event *read_event = get_read_event();
     if (read_event){
         disable_event(read_event);
-        read_event= NULL;
+        // read_event= NULL;
     }
     //kthread_stop(thread_kt1);
     hrtimer_cancel(&ar_regu_timer);
 
     ar_remove_debugfs();
+
+    kfree(get_core_info());
 	pr_info("ar: Module removed\n");
 	return;
 }

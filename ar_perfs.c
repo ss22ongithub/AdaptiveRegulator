@@ -3,6 +3,7 @@
  **************************************************************************/
 
 #include <linux/perf_event.h>
+#include "ar.h"
 #include "ar_perfs.h"
 
 /**************************************************************************
@@ -10,7 +11,7 @@
  **************************************************************************/
 
 
-static struct perf_event *llc_misses_event=NULL;
+static struct perf_event *llc_miss_read_event=NULL;
 static struct irq_work llc_miss_event_irq_work;
 
 
@@ -21,11 +22,9 @@ static u64 llc_overflow_count =0 ;
 static void llc_miss_event_irq_work_handler(struct irq_work *entry){
     
     BUG_ON(in_nmi() || !in_irq());
-
-    //llc_overflow_count   =  perf_event_count(llc_misses_event);
-    // trace_printk("ss22");
-    // pr_info("llc_misses_count=%lld\n",llc_misses_count);
-
+    struct core_info * cinfo = get_core_info();
+    s64 read_budget_used = llc_overflow_count= perf_event_count(llc_miss_read_event) - (cinfo->g_read_count_old);
+    // trace_printk("read_budget_used %lld\n",read_budget_used);
 
 }
 u64 get_llc_ofc(void){
@@ -111,4 +110,12 @@ void init_perf_workq(void){
 	pr_info("%s",__func__);
     init_irq_work(&llc_miss_event_irq_work, llc_miss_event_irq_work_handler);
 
+}
+
+struct perf_event* get_read_event(){
+    return llc_miss_read_event;
+}
+
+void set_read_event(struct perf_event* e){
+    llc_miss_read_event  = e;
 }
