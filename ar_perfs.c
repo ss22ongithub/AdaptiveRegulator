@@ -23,8 +23,13 @@ static void llc_miss_event_irq_work_handler(struct irq_work *entry){
     
     BUG_ON(in_nmi() || !in_irq());
     struct core_info * cinfo = get_core_info();
-    s64 read_budget_used = llc_overflow_count= perf_event_count(llc_miss_read_event) - (cinfo->g_read_count_old);
+    // s64 read_budget_used = llc_overflow_count= perf_event_count(llc_miss_read_event) - (cinfo->g_read_count_old);
+
     // trace_printk("read_budget_used %lld\n",read_budget_used);
+
+    /* Send notfication to throttle_thread  to start the throttling*/
+    cinfo->throttled_task = current;
+    wake_up_interruptible(&cinfo->throttle_evt);
 
 }
 u64 get_llc_ofc(void){

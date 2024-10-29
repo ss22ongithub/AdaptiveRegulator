@@ -19,5 +19,6 @@
 int ar_init_debugfs(void);
 void ar_remove_debugfs(void);
 u32 get_regulation_time(void);
+u32 get_sliding_window_size(void);
 
 #endif /* AR_DEBUGFS_H */
