@@ -59,10 +59,12 @@
 
 
 #define MAX_BW_SAMPLES 20
+ 
 
-
+#if defined (AREG_USE_FIFO)
 #define ERR_HIST_FIFO_SIZE 32
 static DECLARE_KFIFO_PTR(err_hist_fifo, s64);
+#endif
 
 const struct bw_distribution rd_bw_setpoints[MAX_BW_SAMPLES] = {
     {.time = 1, .rd_avg_bw = 1},
@@ -132,7 +134,7 @@ static u64 g_bw_intial_setpoint_mb[MAX_NO_CPUS] = {1000,1000,1000,1000,1000,1000
 // static u64 g_bw_max_mb[MAX_NO_CPUS] = {2000,2000,2000, 2000, 2000, 2000}; /*Bandwidth setpoints in MB/s */
 static ktime_t last_time;
 
-static struct utilization u;
+static struct utilization u = {0};
 
 /**************************************************************************
  * Public Types
@@ -201,7 +203,7 @@ static int thread_kt1_func(void * data){
 
     while (!kthread_should_stop() && cpu_online(cpunr)) {
 
-        pr_info("%s: Wait for Event",__func__);
+        trace_printk("Wait for Event\n");
         wait_event_interruptible(cinfo->throttle_evt,
                      cinfo->throttled_task ||
                      kthread_should_stop());
@@ -209,7 +211,7 @@ static int thread_kt1_func(void * data){
         if (kthread_should_stop())
             break;
 
-        trace_printk("%s:Throttling.",__func__);
+        trace_printk("AREG: Throttling...\n");
         while (cinfo->throttled_task && !kthread_should_stop())
         {
             smp_mb();
@@ -237,11 +239,12 @@ static s64 do_pid_control(s64 error){
     /* Integral Parameters */
     static const s64 Ki_inv = 20;
     static const s64 T1 = 20;
-    static s64 integral=0;
+    static s64 sum_of_err=0;
     
     /* Errors history */
     s64 error_removed = 0;
 
+#if defined (AREG_USE_FIFO)
     int ret = kfifo_in(&err_hist_fifo, &error, 1);    
     if (ret != 1){
         trace_printk("AREG: err_hist_fifo add Failed");
@@ -249,14 +252,14 @@ static s64 do_pid_control(s64 error){
         trace_printk("AREG: err_hist_fifo added\n");
     }
 
-    if (kfifo_len(&err_hist_fifo) >= T1){
+    if (kfifo_len(&err_hist_fifo) > T1){
         trace_printk("AREG: err_hist_fifo: len > %lld \n",T1);
         ret = kfifo_out(&err_hist_fifo, &error_removed, 1);
         if (ret != 1) {
             pr_err("err_hist_fifo remove Failed\n");
         }
     }
-
+#endif
     /* Time */
     ktime_t current_time  = ktime_get();
 
@@ -272,9 +275,9 @@ static s64 do_pid_control(s64 error){
            I = sum / K_inv 
      */
 
-    integral += error - error_removed;
+    sum_of_err = sum_of_err + error - error_removed;
     trace_printk("AREG: err=%lld,error_removed=%lld\n",error, error_removed);
-    s64 I = div64_s64 (integral,Ki_inv);
+    s64 I = div64_s64 (sum_of_err,Ki_inv);
 
     // /* Derivative term */
     // derivative = (error-last_error)/time_diff;
@@ -293,12 +296,15 @@ static s64 do_pid_control(s64 error){
 
 static u32 get_setpoint(void){
     
+    if(1){
+        return 3000;
+    }
+
     static u8 sp_idx = 0;
     static u32 samples = 0;
     u32 sp = 0 ;
     const u32 samples_to_wait = 100;
-
-    if (samples >= samples_to_wait){
+    if (samples > samples_to_wait){
         samples = 0;
         sp_idx++;
         if ( sp_idx >= MAX_BW_SAMPLES ) {
@@ -311,7 +317,7 @@ static u32 get_setpoint(void){
     
     trace_printk("AREG: sp_idx=%u rd_bw_setpoint=%u \n",sp_idx,sp);
 
-    return 3000;
+    return sp;
 }
 
 
@@ -319,7 +325,7 @@ static void update_stats(void){
     trace_printk("AREG: %s\n",__func__);
     u8 ar_sw_size = get_sliding_window_size();
 
-    u.used_bw_mb[u.used_bw_idx] = u.cur_used_bw_mb;
+    u.used_bw_mb_list[u.used_bw_idx] = u.cur_used_bw_mb;
     u.used_bw_idx++;
     if (u.used_bw_idx >= ar_sw_size){
         u.used_bw_idx = 0;
@@ -328,15 +334,14 @@ static void update_stats(void){
     /* Calculate sliding window average of used bandwdths in each regulation interval */
     u64 tmp_avg = 0;
     for(u32 i=0 ; i < ar_sw_size; i++){
-        tmp_avg += u.used_bw_mb[i];
+        tmp_avg += u.used_bw_mb_list[i];
     }    
     u.used_avg_bw_mb = div64_u64(tmp_avg,ar_sw_size);   
 }
 
 static enum hrtimer_restart ar_regu_timer_callback(struct hrtimer *timer)
 {
-	static s64 setpoint_bw_mb = rd_bw_setpoints[0].rd_avg_bw;
-    // pr_info("%s:",__func__);
+	static s64 setpoint_bw_mb = 0;
 
     struct perf_event *read_event = get_read_event();
     struct core_info *cinfo = get_core_info();
@@ -347,6 +352,9 @@ static enum hrtimer_restart ar_regu_timer_callback(struct hrtimer *timer)
     read_event->pmu->stop(read_event, PERF_EF_UPDATE);
     cinfo->g_read_count_new = perf_event_count(read_event);
     s64 read_count_used = cinfo->g_read_count_new - cinfo->g_read_count_old;
+
+    trace_printk("AREG: o_cnt=%llu n_cnt=%llu \n", 
+    cinfo->g_read_count_old, cinfo->g_read_count_new);
     
     if (!read_count_used){
         // No change in the counter , so no  request was sent => possibly no load running on the core 
@@ -388,8 +396,7 @@ static enum hrtimer_restart ar_regu_timer_callback(struct hrtimer *timer)
 
     s64 read_event_new_budget = convert_mb_to_events(correction_mb); //convert_mb_to_events(correction_mb);
 
-    trace_printk("AREG: o_cnt=%llu n_cnt=%llu n_budg=%lld\n", 
-    cinfo->g_read_count_old, cinfo->g_read_count_new,read_event_new_budget);
+    trace_printk("AREG:n_budg=%lld\n", read_event_new_budget);
     trace_printk("used_avg_bw=%lld cur_used_bw_mb=%lld sp_mb=%lld err_mb=%lld delta=%lld cor_mb=%lld\n",
     u.used_avg_bw_mb,
     u.cur_used_bw_mb,
@@ -428,22 +435,29 @@ static int __init ar_init (void ){
     pr_info("NR_CPUS: %d, online_cpus: %d\n", NR_CPUS, num_online_cpus());
 
     cinfo = (struct core_info*)kzalloc(sizeof (struct core_info), GFP_KERNEL);
-    u.used_bw_mb = (u64*)kzalloc(sizeof(u64)*get_sliding_window_size(), GFP_KERNEL);
+
+    u.used_bw_mb_list = (u64*)kzalloc(sizeof(u64)*get_sliding_window_size(), GFP_KERNEL);
 
     /* TODO: Used CPU0 for our experiement, change it to all avaiable cores later  */
     cinfo->cpu_id = 0;
 
     /* Initialize with initial setpoint bandwidth values */
     u.prev_used_bw_mb = g_bw_intial_setpoint_mb[cinfo->cpu_id];
-    u.used_bw_mb[u.used_bw_idx] = u.prev_used_bw_mb;
+
+    u.used_bw_idx = 0;
+    u.used_bw_mb_list[u.used_bw_idx] = u.prev_used_bw_mb;
     u.used_bw_idx++;
 
+    #if defined (AREG_USE_FIFO)
     // Initialize the error fifo
     int ret = kfifo_alloc(&err_hist_fifo,ERR_HIST_FIFO_SIZE, GFP_KERNEL);
     if (ret) {
         printk(KERN_ERR "Failed to allocate kfifo %d\n",ret);
         return ret;
     }
+
+    pr_info("KFIFO err_hist_fifo created");
+    #endif 
 
     /* Creat entries in debugfs*/
     ar_init_debugfs();
@@ -458,9 +472,12 @@ static int __init ar_init (void ){
 	    pr_err("read_event %p did not allocate ", read_event);
         return -1;
 	}
+
    
     set_read_event(read_event);
     enable_event(read_event);
+
+    
     thread_kt1 = kthread_create_on_node(thread_kt1_func,
                                        (void *)((unsigned long)cinfo->cpu_id),
                                        cpu_to_node(cinfo->cpu_id),
@@ -499,10 +516,21 @@ static void __exit ar_exit( void )
     kthread_stop(thread_kt1);
     hrtimer_cancel(&ar_regu_timer);
 
-    kfifo_free(&err_hist_fifo);
-    ar_remove_debugfs();
+#if defined (AREG_USE_FIFO)
 
-    kfree(get_core_info());
+    kfifo_free(&err_hist_fifo);
+    pr_info("KFIFO err_hist_fifo freed");
+#endif
+
+    /* Deallocate all core info */
+    kfree(u.used_bw_mb_list);
+    struct core_info* cinfo = get_core_info();
+    kfree(cinfo);
+    cinfo=NULL;
+    pr_info("ar: Coreinfo freed\n");
+
+    ar_remove_debugfs();
+    
 	pr_info("ar: Module removed\n");
 	return;
 }
