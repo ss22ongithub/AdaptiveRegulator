@@ -99,20 +99,20 @@ void event_read_overflow_callback(struct perf_event *event,
 void enable_event(struct perf_event *event){
 
 	perf_event_enable(event);
-
+    pr_info("ar: Perf event enabled\n");
 }
 
 void disable_event(struct perf_event *event){
 
     perf_event_disable(event);
     perf_event_release_kernel(event);
-    pr_info("Perf event disabled\n");
+    pr_info("ar: Perf event disabled\n");
 
 }
 
 void init_perf_workq(void){
 	/* initialize irq_work_queue */
-	pr_info("%s",__func__);
+	pr_info("ar: %s",__func__);
     init_irq_work(&llc_miss_event_irq_work, llc_miss_event_irq_work_handler);
 
 }

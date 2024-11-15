@@ -15,7 +15,7 @@ struct core_info {
 struct utilization {
 	s64  prev_used_bw_mb; /* BW utilized in the previous regulation interval , units: Mbps*/
 	s64  cur_used_bw_mb;
-	u64* used_bw_mb;
+	u64* used_bw_mb_list;
 	u64  used_avg_bw_mb;
 	u32  used_bw_idx;
 };
