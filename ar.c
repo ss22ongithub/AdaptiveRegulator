@@ -229,17 +229,19 @@ static int thread_kt1_func(void * data){
 /**************************************************************************
  * Other Utils
  **************************************************************************/
+/* Proportional Parameters */
+static const s64 Kp_inv = 1;  // Kp=1   
 
+/* Integral Parameters */
+static const s64 Ki_inv = 10; // Ki=0.1
+static const s64 Kd_inv = 2;  //Kd=0.5
+static const s64 Ti = 20;
+static const s64 Td = 20;
 
 static s64 do_pid_control(s64 error){
 
     static ktime_t last_time = 0;
-    /* Proportional Parameters */
-    static const s64 Kp_inv = 2;
-    
-    /* Integral Parameters */
-    static const s64 Ki_inv = 20;
-    static const s64 T1 = 20;
+
     static s64 sum_of_err=0;
     
     /* Errors history */
@@ -253,8 +255,8 @@ static s64 do_pid_control(s64 error){
         trace_printk("AREG: err_hist_fifo added\n");
     }
 
-    if (kfifo_len(&err_hist_fifo) > T1){
-        trace_printk("AREG: err_hist_fifo: len > %lld \n",T1);
+    if (kfifo_len(&err_hist_fifo) > Ti){
+        trace_printk("AREG: err_hist_fifo: len > %lld \n",Ti);
         ret = kfifo_out(&err_hist_fifo, &error_removed, 1);
         if (ret != 1) {
             pr_err("ar: err_hist_fifo remove Failed\n");
@@ -283,7 +285,7 @@ static s64 do_pid_control(s64 error){
     // /* Derivative term */
     // derivative = (error-last_error)/time_diff;
     // D = Kd * derivative/1000;
-    s64 D = 0;
+    s64 D = div64_s64( (error - error_removed), (Td * Kd_inv) );
 
     s64 out = P + I + D;
     trace_printk("AREG:%s: P=%lld I=%lld D=%lld out=%lld\n",__func__, P, I, D,out);
@@ -393,7 +395,7 @@ static enum hrtimer_restart ar_regu_timer_callback(struct hrtimer *timer)
         delta = do_pid_control(error_mb);
         correction_mb = u.prev_used_bw_mb + delta;
         if (correction_mb < 0 ){
-            correction_mb = u.prev_used_bw_mb;
+            correction_mb = u.prev_used_bw_mb/10;
         }
     }
 
@@ -492,6 +494,7 @@ static int __init ar_init (void ){
 	BUG_ON(IS_ERR(thread_kt1));
 	kthread_bind(thread_kt1, cinfo->cpu_id);
     wake_up_process(thread_kt1);
+
 
     
     hrtimer_init( &ar_regu_timer, CLOCK_MONOTONIC , HRTIMER_MODE_REL_PINNED);

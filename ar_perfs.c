@@ -83,7 +83,7 @@ struct perf_event *init_counter(int cpu, int sample_period, int counter_id, void
         return NULL;
     }
 
-    pr_info("CPU%d configured counter 0x%x\n", cpu, counter_id);
+    pr_info("ar: CPU%d configured counter 0x%x\n", cpu, counter_id);
     return event;
 }
 
