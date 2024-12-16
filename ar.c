@@ -162,6 +162,8 @@ static inline u64 convert_mb_to_events(int mb)
     return div64_u64((u64)mb*1024*1024,
              CACHE_LINE_SIZE * (1000/get_regulation_time()));
 }
+
+/* Convert # of events to MB/s */
 static inline int convert_events_to_mb(u64 events)
 {
 	/*
@@ -171,7 +173,7 @@ static inline int convert_events_to_mb(u64 events)
 	 */ 
     u32 ar_regulation_time_ms = get_regulation_time();
 	int divisor = ar_regulation_time_ms*1024*1024;
-	int mb = div64_u64(events*CACHE_LINE_SIZE*1000, divisor);
+	int mb = div64_u64(events*CACHE_LINE_SIZE*1000 + (divisor-1), divisor);
 	return mb;
 }
 
@@ -290,9 +292,9 @@ static s64 do_pid_control(s64 error){
     s64 out = P + I + D;
     trace_printk("AREG:%s: P=%lld I=%lld D=%lld out=%lld\n",__func__, P, I, D,out);
 
+
     last_time = current_time;
     
-
     return out;
 }
 
@@ -355,8 +357,8 @@ static enum hrtimer_restart ar_regu_timer_callback(struct hrtimer *timer)
     cinfo->g_read_count_new = perf_event_count(read_event);
     s64 read_count_used = cinfo->g_read_count_new - cinfo->g_read_count_old;
 
-    trace_printk("AREG: o_cnt=%llu n_cnt=%llu \n", 
-    cinfo->g_read_count_old, cinfo->g_read_count_new);
+    trace_printk("AREG: o_cnt=%llu n_cnt=%llu used_cnt=%lld \n", 
+    cinfo->g_read_count_old, cinfo->g_read_count_new, read_count_used);
     
     if (!read_count_used){
         // No change in the counter , so no  request was sent => possibly no load running on the core 
@@ -379,38 +381,36 @@ static enum hrtimer_restart ar_regu_timer_callback(struct hrtimer *timer)
 
 
     /*
-    At t1 - u1_mb  -> cur , prev =0, e = cur -prev , correction = prev + delta , delta = pid(e)
-    At t2 - u2_mb  -> cur , pre = u1_mb
-    At t3 - u3_mb  -> cur , prev = u2_mb 
-    At t4 - u4_mb
+    u.cur_used_bw_mb represents the BW used in the last regulation interval (t-1)
+    u.prev_used_bw_mb represents the BW used in the last regulation interval (t-2)
     */
 
-    s64 delta = 0;
-    s64 correction_mb = u.prev_used_bw_mb;
+    s64 delta = 0;  
+    s64 new_alloc_budg_mb = u.cur_used_bw_mb;
 
     setpoint_bw_mb = get_setpoint();
     s64 error_mb = setpoint_bw_mb - u.used_avg_bw_mb;
     if ( 0 != error_mb ){
 
         delta = do_pid_control(error_mb);
-        correction_mb = u.prev_used_bw_mb + delta;
-        if (correction_mb < 0 ){
-            correction_mb = u.prev_used_bw_mb/10;
+        new_alloc_budg_mb = u.cur_used_bw_mb + delta;
+        if (new_alloc_budg_mb < 0 ){
+            new_alloc_budg_mb = 0;
         }
     }
 
  
-    u64 read_event_new_budget = convert_mb_to_events(correction_mb);
+    u64 read_event_new_budget = convert_mb_to_events(new_alloc_budg_mb);
 
     
-    //trace_printk("AREG:err_mb=%lld n_budg=%lld delta=%lld cor_mb=%lld\n", error_mb,read_event_new_budget,delta,correction_mb);
+    //trace_printk("AREG:err_mb=%lld n_budg=%lld delta=%lld cor_mb=%lld\n", error_mb,read_event_new_budget,delta,new_alloc_budg_mb);
     trace_printk("used_avg_bw=%lld cur_used_bw_mb=%lld u.prev_used_bw_mb=%lld sp_mb=%lld err_mb=%lld delta=%lld cor_mb=%lld n_budg=%lld\n",
     u.used_avg_bw_mb,
     u.cur_used_bw_mb,
     u.prev_used_bw_mb,
     setpoint_bw_mb,
     error_mb, delta, 
-    correction_mb,
+    new_alloc_budg_mb,
     read_event_new_budget);
 
 
@@ -495,7 +495,7 @@ static int __init ar_init (void ){
 	kthread_bind(thread_kt1, cinfo->cpu_id);
     wake_up_process(thread_kt1);
 
-
+    pr_info("Starting AR ");
     
     hrtimer_init( &ar_regu_timer, CLOCK_MONOTONIC , HRTIMER_MODE_REL_PINNED);
     ar_regu_timer.function=&ar_regu_timer_callback;
