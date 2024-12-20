@@ -11,7 +11,7 @@ struct core_info {
     wait_queue_head_t throttle_evt;
    	struct task_struct * throttled_task;
 };
-#define SLIDING_WINDOW_SIZE 30  // TODO: CHANGE AR_SW_SIZE IN AR_DEBUGFS.C AS WELL
+#define SLIDING_WINDOW_SIZE 25  // TODO: CHANGE AR_SW_SIZE IN AR_DEBUGFS.C AS WELL
 struct utilization {
 	s64  prev_used_bw_mb; /* BW utilized in the previous regulation interval , units: Mbps*/
 	s64  cur_used_bw_mb;
