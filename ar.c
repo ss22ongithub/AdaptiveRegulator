@@ -63,7 +63,7 @@
 #define AREG_USE_FIFO
 
 #if defined (AREG_USE_FIFO)
-#define ERR_HIST_FIFO_SIZE 32
+#define ERR_HIST_FIFO_SIZE 64
 static DECLARE_KFIFO_PTR(err_hist_fifo, s64);
 #endif
 
@@ -137,6 +137,7 @@ static ktime_t last_time;
 
 static struct utilization u = {0};
 
+
 /**************************************************************************
  * Public Types
  **************************************************************************/
@@ -171,8 +172,7 @@ static inline int convert_events_to_mb(u64 events)
 	 *     =  (event * CACHE )/ (time_in_ms * 1024 *1024)  = mb/ms
 	 *     =  (event * CACHE * 1000 )/ (time_in_sec * 1024 *1024)  = mb/s
 	 */ 
-    u32 ar_regulation_time_ms = get_regulation_time();
-	int divisor = ar_regulation_time_ms*1024*1024;
+    int divisor = get_regulation_time()*1024*1024;
 	int mb = div64_u64(events*CACHE_LINE_SIZE*1000 + (divisor-1), divisor);
 	return mb;
 }
@@ -232,7 +232,7 @@ static int thread_kt1_func(void * data){
  * Other Utils
  **************************************************************************/
 /* Proportional Parameters */
-static const s64 Kp_inv = 1;  // Kp=1   
+static const s64 Kp_inv = 2;  // Kp=1/2
 
 /* Integral Parameters */
 static const s64 Ki_inv = 10; // Ki=0.1
@@ -289,6 +289,9 @@ static s64 do_pid_control(s64 error){
     // D = Kd * derivative/1000;
     s64 D = div64_s64( (error - error_removed), (Td * Kd_inv) );
 
+    /*TO DO: removed after tuning*/
+    I = 0;
+    D = 0;
     s64 out = P + I + D;
     trace_printk("AREG:%s: P=%lld I=%lld D=%lld out=%lld\n",__func__, P, I, D,out);
 
@@ -343,6 +346,7 @@ static void update_stats(u64 cur_used_bw_mb){
     u.used_avg_bw_mb = div64_u64(tmp_avg,ar_sw_size);   
 }
 
+
 static enum hrtimer_restart ar_regu_timer_callback(struct hrtimer *timer)
 {
 	static s64 setpoint_bw_mb = 0;
@@ -357,9 +361,7 @@ static enum hrtimer_restart ar_regu_timer_callback(struct hrtimer *timer)
     cinfo->g_read_count_new = perf_event_count(read_event);
     s64 read_count_used = cinfo->g_read_count_new - cinfo->g_read_count_old;
 
-    trace_printk("AREG: o_cnt=%llu n_cnt=%llu used_cnt=%lld \n", 
-    cinfo->g_read_count_old, cinfo->g_read_count_new, read_count_used);
-    
+
     if (!read_count_used){
         // No change in the counter , so no  request was sent => possibly no load running on the core 
         trace_printk("AREG: No change in read counter on core%u.\n",cinfo->cpu_id);
@@ -404,14 +406,17 @@ static enum hrtimer_restart ar_regu_timer_callback(struct hrtimer *timer)
 
     
     //trace_printk("AREG:err_mb=%lld n_budg=%lld delta=%lld cor_mb=%lld\n", error_mb,read_event_new_budget,delta,new_alloc_budg_mb);
-    trace_printk("used_avg_bw=%lld cur_used_bw_mb=%lld u.prev_used_bw_mb=%lld sp_mb=%lld err_mb=%lld delta=%lld cor_mb=%lld n_budg=%lld\n",
+    trace_printk("used_avg_bw=%lld cur_used_bw_mb=%lld u.prev_used_bw_mb=%lld  sp_mb=%lld err_mb=%lld delta=%lld cor_mb=%lld n_budg=%lld o_cnt=%llu n_cnt=%llu used_cnt=%lld \n",
     u.used_avg_bw_mb,
     u.cur_used_bw_mb,
     u.prev_used_bw_mb,
     setpoint_bw_mb,
     error_mb, delta, 
     new_alloc_budg_mb,
-    read_event_new_budget);
+    read_event_new_budget,
+    cinfo->g_read_count_old, 
+    cinfo->g_read_count_new, 
+    read_count_used);
 
 
     local64_set(&read_event->hw.period_left, read_event_new_budget);  //??? SOME major issue here
@@ -506,8 +511,8 @@ static int __init ar_init (void ){
     cinfo->throttled_task = NULL;
     init_waitqueue_head(&cinfo->throttle_evt);
 
-
     pr_info("ar: Module Initialized\n");
+    pr_info("ar: Kp=%d/%lld, Ki=%d/%lld, Kd=%d/%lld \n", 1,Kp_inv, 1,Ki_inv, 1,Kd_inv);
     
     return 0;
 
