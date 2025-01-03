@@ -232,7 +232,7 @@ static int thread_kt1_func(void * data){
  * Other Utils
  **************************************************************************/
 /* Proportional Parameters */
-static const s64 Kp_inv = 2;  // Kp=1/2
+static const s64 Kp_inv = 7;  // Kp=1/9
 
 /* Integral Parameters */
 static const s64 Ki_inv = 10; // Ki=0.1
@@ -242,7 +242,7 @@ static const s64 Td = 20;
 
 static s64 do_pid_control(s64 error){
 
-    static ktime_t last_time = 0;
+    // static ktime_t last_time = 0;
 
     static s64 sum_of_err=0;
     
@@ -266,7 +266,7 @@ static s64 do_pid_control(s64 error){
     }
 #endif
     /* Time */
-    ktime_t current_time  = ktime_get();
+    // ktime_t current_time  = ktime_get();
 
     /* Proportional term:  P = Kp * error_mb     */
     s64 P = div64_s64(error,Kp_inv);
@@ -296,7 +296,7 @@ static s64 do_pid_control(s64 error){
     trace_printk("AREG:%s: P=%lld I=%lld D=%lld out=%lld\n",__func__, P, I, D,out);
 
 
-    last_time = current_time;
+    // last_time = current_time;
     
     return out;
 }
