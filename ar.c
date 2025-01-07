@@ -232,13 +232,13 @@ static int thread_kt1_func(void * data){
  * Other Utils
  **************************************************************************/
 /* Proportional Parameters */
-static const s64 Kp_inv = 7;  // Kp=1/9
+static const s64 Kp_inv = 9;  // Kp=1/9
 
 /* Integral Parameters */
-static const s64 Ki_inv = 10; // Ki=0.1
-static const s64 Kd_inv = 2;  //Kd=0.5
-static const s64 Ti = 20;
-static const s64 Td = 20;
+static const s64 Ki_inv = 50; // Ki=1/50
+static const s64 Kd_inv = 1;  //Kd=1
+static const s64 Ti = 30;
+static const s64 Td = 30;
 
 static s64 do_pid_control(s64 error){
 
@@ -246,7 +246,7 @@ static s64 do_pid_control(s64 error){
 
     static s64 sum_of_err=0;
     
-    /* Errors history */
+    // error removed from sum computation
     s64 error_removed = 0;
 
 #if defined (AREG_USE_FIFO)
@@ -282,7 +282,7 @@ static s64 do_pid_control(s64 error){
 
     sum_of_err = sum_of_err + error - error_removed;
     trace_printk("AREG: err=%lld,error_removed=%lld\n",error, error_removed);
-    s64 I = div64_s64 (sum_of_err,Ki_inv);
+    s64 I = div64_s64 (sum_of_err,(Ti * Ki_inv));
 
     // /* Derivative term */
     // derivative = (error-last_error)/time_diff;
@@ -290,8 +290,7 @@ static s64 do_pid_control(s64 error){
     s64 D = div64_s64( (error - error_removed), (Td * Kd_inv) );
 
     /*TO DO: removed after tuning*/
-    I = 0;
-    D = 0;
+    
     s64 out = P + I + D;
     trace_printk("AREG:%s: P=%lld I=%lld D=%lld out=%lld\n",__func__, P, I, D,out);
 
@@ -512,7 +511,7 @@ static int __init ar_init (void ){
     init_waitqueue_head(&cinfo->throttle_evt);
 
     pr_info("ar: Module Initialized\n");
-    pr_info("ar: Kp=%d/%lld, Ki=%d/%lld, Kd=%d/%lld \n", 1,Kp_inv, 1,Ki_inv, 1,Kd_inv);
+    pr_info("ar: Kp=%d/%lld, Ki=%d/%lld (Ti=%lld), Kd=%d/%lld (Td=%lld)\n", 1,Kp_inv, 1,Ki_inv,Ti, 1,Kd_inv, Td);
     
     return 0;
 
