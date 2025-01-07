@@ -290,7 +290,7 @@ static s64 do_pid_control(s64 error){
     s64 D = div64_s64( (error - error_removed), (Td * Kd_inv) );
 
     /*TO DO: removed after tuning*/
-    
+    D=0;
     s64 out = P + I + D;
     trace_printk("AREG:%s: P=%lld I=%lld D=%lld out=%lld\n",__func__, P, I, D,out);
 
