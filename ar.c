@@ -65,6 +65,7 @@
 #if defined (AREG_USE_FIFO)
 #define ERR_HIST_FIFO_SIZE 64
 static DECLARE_KFIFO_PTR(err_hist_fifo, s64);
+static DECLARE_KFIFO_PTR(err_hist_fifo_D, s64);
 #endif
 
 const struct bw_distribution rd_bw_setpoints[MAX_BW_SAMPLES] = {
@@ -236,9 +237,9 @@ static const s64 Kp_inv = 9;  // Kp=1/9
 
 /* Integral Parameters */
 static const s64 Ki_inv = 50; // Ki=1/50
-static const s64 Kd_inv = 1;  //Kd=1
+static const s64 Kd_inv = 5;  //Kd=5
 static const s64 Ti = 30;
-static const s64 Td = 30;
+static const s64 Td = 20;
 
 static s64 do_pid_control(s64 error){
 
@@ -247,7 +248,8 @@ static s64 do_pid_control(s64 error){
     static s64 sum_of_err=0;
     
     // error removed from sum computation
-    s64 error_removed = 0;
+    s64 error_removed_I = 0;
+    s64 error_removed_D = 0;
 
 #if defined (AREG_USE_FIFO)
     int ret = kfifo_in(&err_hist_fifo, &error, 1);    
@@ -257,13 +259,29 @@ static s64 do_pid_control(s64 error){
         trace_printk("AREG: err_hist_fifo added\n");
     }
 
+    ret = kfifo_in(&err_hist_fifo_D, &error, 1);    
+    if (ret != 1){
+        trace_printk("AREG: err_hist_fifo_D add Failed");
+    }else{
+        trace_printk("AREG: err_hist_fifo_D added\n");
+    }
+
     if (kfifo_len(&err_hist_fifo) > Ti){
         trace_printk("AREG: err_hist_fifo: len > %lld \n",Ti);
-        ret = kfifo_out(&err_hist_fifo, &error_removed, 1);
+        ret = kfifo_out(&err_hist_fifo, &error_removed_I, 1);
         if (ret != 1) {
             pr_err("ar: err_hist_fifo remove Failed\n");
         }
     }
+
+    if (kfifo_len(&err_hist_fifo_D) > Td){
+        trace_printk("AREG: err_hist_fifo_D: len > %lld \n",Ti);
+        ret = kfifo_out(&err_hist_fifo_D, &error_removed_D, 1);
+        if (ret != 1) {
+            pr_err("ar: err_hist_fifo remove Failed\n");
+        }
+    }
+
 #endif
     /* Time */
     // ktime_t current_time  = ktime_get();
@@ -280,17 +298,17 @@ static s64 do_pid_control(s64 error){
            I = sum / K_inv 
      */
 
-    sum_of_err = sum_of_err + error - error_removed;
-    trace_printk("AREG: err=%lld,error_removed=%lld\n",error, error_removed);
+    sum_of_err = sum_of_err + error - error_removed_I;
+    trace_printk("AREG: err=%lld,error_removed_I=%lld\n",error, error_removed_I);
     s64 I = div64_s64 (sum_of_err,(Ti * Ki_inv));
 
     // /* Derivative term */
     // derivative = (error-last_error)/time_diff;
     // D = Kd * derivative/1000;
-    s64 D = div64_s64( (error - error_removed), (Td * Kd_inv) );
+    s64 D = div64_s64( (error - error_removed_D), (Td * Kd_inv) );
 
     /*TO DO: removed after tuning*/
-    D=0;
+    
     s64 out = P + I + D;
     trace_printk("AREG:%s: P=%lld I=%lld D=%lld out=%lld\n",__func__, P, I, D,out);
 
@@ -464,7 +482,12 @@ static int __init ar_init (void ){
     // Initialize the error fifo
     int ret = kfifo_alloc(&err_hist_fifo,ERR_HIST_FIFO_SIZE, GFP_KERNEL);
     if (ret) {
-        printk(KERN_ERR "ar: Failed to allocate kfifo %d\n",ret);
+        printk(KERN_ERR "ar: Failed to allocate for kfifo: err_hist_fifo %d\n",ret);
+        return ret;
+    }
+    ret = kfifo_alloc(&err_hist_fifo_D,ERR_HIST_FIFO_SIZE, GFP_KERNEL);
+    if (ret) {
+        printk(KERN_ERR "ar: Failed to allocate for kfifo: err_hist_fifo_D %d\n",ret);
         return ret;
     }
 
