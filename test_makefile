@@ -1,0 +1,13 @@
+KVERSION = $(shell uname -r)
+BLDDIR= /lib/modules/$(KVERSION)/build
+
+MODULE_NAME=test
+
+obj-m += $(MODULE_NAME).o
+# $(MODULE_NAME)-objs := test.o
+
+all: 
+	make -C $(BLDDIR) M=$(PWD) modules
+
+clean:
+	make -C $(BLDDIR) M=$(PWD) clean
