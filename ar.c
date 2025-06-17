@@ -469,7 +469,7 @@ static int __init ar_init (void ){
     cinfo = (struct core_info*)kzalloc(sizeof (struct core_info), GFP_KERNEL);
 
     /* TODO: Used CPU0 for our experiement, change it to all avaiable cores later  */
-    cinfo->cpu_id = 0;
+    cinfo->cpu_id = 3;
 
     /* Initialize with initial setpoint bandwidth values */
     u.prev_used_bw_mb = g_bw_intial_setpoint_mb[cinfo->cpu_id];
