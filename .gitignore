@@ -1,10 +1,11 @@
 # Ignore compiled files
-*.class
-*.pyc
-
-# Ignore build artifacts
 *.ko
-*.mod*
+*.o
+.*
+Module.symvers
+*.mod
+*.mod.c
+modules.order
 
 # Ignore IDE files
 .idea/
@@ -15,4 +16,6 @@
 # api_keys.txt
 
 # Ignore traces and collected data
+traces/
+dataprocessing/
 
