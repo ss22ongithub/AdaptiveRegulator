@@ -11,56 +11,17 @@
 /**************************************************************************
  * Included Files
  **************************************************************************/
-#include <linux/version.h>
-#include <linux/kernel.h>
-#include <linux/module.h>
-#include <linux/hrtimer.h>
-#include <linux/ktime.h>
-#include <linux/smp.h> /* IPI calls */
-#include <linux/irq_work.h>
-#include <linux/hardirq.h>
-#include <linux/perf_event.h>
-#include <linux/delay.h>
-#include <linux/debugfs.h>
-#include <linux/seq_file.h>
-#include <asm/atomic.h>
-#include <linux/slab.h>
-#include <linux/vmalloc.h>
-#include <linux/uaccess.h>
-#include <linux/notifier.h>
-#include <linux/kthread.h>
-#include <linux/printk.h>
-#include <linux/interrupt.h>
-#include <linux/trace_events.h>
-#include <linux/cpumask.h>
-#include <linux/topology.h>
-#include <linux/kfifo.h>
-
-
-#include <linux/init.h>
-#include <linux/hw_breakpoint.h>
-#include <linux/kstrtox.h>
-
-
-
-#if LINUX_VERSION_CODE > KERNEL_VERSION(5, 0, 0)
-#  include <uapi/linux/sched/types.h>
-#elif LINUX_VERSION_CODE > KERNEL_VERSION(4, 13, 0)
-#  include <linux/sched/types.h>
-#elif LINUX_VERSION_CODE > KERNEL_VERSION(3, 8, 0)
-#  include <linux/sched/rt.h>
-#endif
-#include <linux/sched.h>
-
-
+#include "kernel_headers.h"
+#include "ar.h"
+#include "master.h"
 #include "ar_debugfs.h"
 #include "ar_perfs.h"
-#include "ar.h"
+
 
 
 #define MAX_BW_SAMPLES 20
 
-#define AREG_USE_FIFO
+//#define AREG_USE_FIFO
 
 #if defined (AREG_USE_FIFO)
 #define ERR_HIST_FIFO_SIZE 64
@@ -97,7 +58,7 @@ const struct bw_distribution rd_bw_setpoints[MAX_BW_SAMPLES] = {
 #define CACHE_LINE_SIZE 64
 #define TIMEOUT_NSEC ( 1000000000L )
 #define TIMEOUT_SEC  ( 5 )
-#define MAX_NO_CPUS 6
+#define MAX_NO_CPUS 4
 
 #define DEBUG(x)
 
@@ -122,6 +83,8 @@ const struct bw_distribution rd_bw_setpoints[MAX_BW_SAMPLES] = {
  * Function Declarations 
  **************************************************************************/
 
+static void deinitialize_cpu_info(struct core_info *cinfo , u8 cpu_id);
+static int  setup_cpu_info(struct core_info* cinfo, u8 cpu_id);
 
 
 
@@ -132,8 +95,8 @@ const struct bw_distribution rd_bw_setpoints[MAX_BW_SAMPLES] = {
 static int g_read_counter_id = PMU_LLC_MISS_COUNTER_ID;
 module_param(g_read_counter_id, hexint,  S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
 // static int g_period_us=1000;
-static u64 g_bw_intial_setpoint_mb[MAX_NO_CPUS] = {1000,1000,1000,1000,1000,1000}; /*Bandwidth setpoints in MB/s */
-// static u64 g_bw_max_mb[MAX_NO_CPUS] = {2000,2000,2000, 2000, 2000, 2000}; /*Bandwidth setpoints in MB/s */
+static u64 g_bw_intial_setpoint_mb[MAX_NO_CPUS+1] = {0,1000,1000,1000,1000}; /*Bandwidth setpoints in MB/s */
+// static u64 g_bw_max_mb[MAX_NO_CPUS+1] = {0,2000,2000, 2000, 2000}; /*Bandwidth setpoints in MB/s */
 static ktime_t last_time;
 
 static struct utilization u = {0};
@@ -141,12 +104,12 @@ static struct utilization u = {0};
 
 /**************************************************************************
  * Public Types
- **************************************************************************/
+ **** **********************************************************************/
 
-static struct core_info* cinfo = NULL;
+static struct core_info cinfo;
 
 struct core_info* get_core_info(void){
-    return cinfo;
+    return &cinfo;
 }
 
 // static struct core_info __percpu *core_info;
@@ -168,7 +131,9 @@ static inline u64 convert_mb_to_events(int mb)
 /* Convert # of events to MB/s */
 static inline int convert_events_to_mb(u64 events)
 {
-	/*
+	/*Linux Kernel Programming (Kaiwan N Billimoria)
+
+
 	 * BW  = (event * CACHE_LINE_SIZE)/ time_in_ms  - bytes/ms 
 	 *     =  (event * CACHE )/ (time_in_ms * 1024 *1024)  = mb/ms
 	 *     =  (event * CACHE * 1000 )/ (time_in_sec * 1024 *1024)  = mb/s
@@ -193,12 +158,12 @@ static inline void print_current_context(void)
  **************************************************************************/
 
 
-
+//TODO: instatiate according to the number of core to be regulated
 static struct task_struct* thread_kt1 = NULL;
 
 static int thread_kt1_func(void * data){
-    int cpunr = (unsigned long)data;
-    pr_info("ar: %s: Enter",__func__);
+    u8 cpunr = (unsigned long)data;
+    pr_info("%s: Enter",__func__);
 
     
     struct core_info *cinfo = get_core_info();//per_cpu_ptr(core_info, cpunr);
@@ -208,24 +173,25 @@ static int thread_kt1_func(void * data){
     while (!kthread_should_stop() && cpu_online(cpunr)) {
 
         trace_printk("Wait for Event\n");
-        wait_event_interruptible(cinfo->throttle_evt,
-                     cinfo->throttled_task ||
-                     kthread_should_stop());
-
-        if (kthread_should_stop())
-            break;
-
-        trace_printk("AREG: Throttling...\n");
-        while (cinfo->throttled_task && !kthread_should_stop())
-        {
-            smp_mb();
-            cpu_relax();
-            /* TODO: mwait */
-        }
+        ssleep(5);
+//        wait_event_interruptible(cinfo->throttle_evt,
+//                     cinfo->throttled_task ||
+//                     kthread_should_stop());
+//
+//        if (kthread_should_stop())
+//            break;
+//
+//        trace_printk("Throttling CPU%u...\n",cpunr);
+//        while (cinfo->throttled_task && !kthread_should_stop())
+//        {
+//            smp_mb();
+//            cpu_relax();
+//            /* TODO: mwait */
+//        }
 
     }
 
-    pr_info("ar: %s: Exit",__func__);
+    pr_info("%s: Exit",__func__);
     return 0;
 }
 
@@ -378,7 +344,6 @@ static enum hrtimer_restart ar_regu_timer_callback(struct hrtimer *timer)
     cinfo->g_read_count_new = perf_event_count(read_event);
     s64 read_count_used = cinfo->g_read_count_new - cinfo->g_read_count_old;
 
-
     if (!read_count_used){
         // No change in the counter , so no  request was sent => possibly no load running on the core 
         trace_printk("AREG: No change in read counter on core%u.\n",cinfo->cpu_id);
@@ -418,7 +383,6 @@ static enum hrtimer_restart ar_regu_timer_callback(struct hrtimer *timer)
         }
     }
 
- 
     u64 read_event_new_budget = convert_mb_to_events(new_alloc_budg_mb);
 
     
@@ -457,85 +421,103 @@ static enum hrtimer_restart ar_regu_timer_callback(struct hrtimer *timer)
 
 static struct hrtimer ar_regu_timer ;
 
+static int  setup_cpu_info(struct core_info* cinfo, const u8 cpu_id){
+    pr_info("%s: Enter", __func__ );
+    memset(cinfo, sizeof(struct core_info), 0);
+    cinfo->cpu_id = cpu_id;
 
+    /* Initialize with initial setpoint bandwidth values */
+    cinfo->prev_used_bw_mb = g_bw_intial_setpoint_mb[cinfo->cpu_id];
+
+    cinfo->used_bw_idx = 0;
+    cinfo->used_bw_mb_list[cinfo->used_bw_idx] = cinfo->prev_used_bw_mb;
+    cinfo->used_bw_idx++;
+
+    cinfo->read_event =  init_counter(cinfo->cpu_id,
+                                     convert_mb_to_events(cinfo->prev_used_bw_mb),
+                                     g_read_counter_id,
+                                     event_read_overflow_callback);
+    if (cinfo->read_event == NULL){
+        pr_err("Read_event %p did not allocate ", cinfo->read_event);
+        return -1;
+    }
+
+    //set_read_event(cinfo->read_event);
+    //enable_event(cinfo->read_event);
+
+
+    thread_kt1 = kthread_run_on_cpu(thread_kt1_func,
+                                    (void *)((unsigned long)cpu_id),
+                                    cpu_to_node(cpu_id),
+                                    "kthrottler/%u");
+
+    BUG_ON(IS_ERR(thread_kt1));
+    pr_info("%s: Exit", __func__ );
+    return 0;
+}
+
+static void deinitialize_cpu_info(struct core_info *cinfo , const u8 cpu_id){
+    pr_info("%s:Enter",__func__ );
+    if (cinfo->read_event){
+        disable_event(cinfo->read_event);
+        cinfo->read_event= NULL;
+    }
+    kthread_stop(thread_kt1);
+    thread_kt1 = NULL;
+    pr_info("%s:Exit",__func__ );
+
+}
 /**************************************************************************************************************************
  * Module main
  **************************************************************************************************************************/
-
+const u8 regulated_cpu_ids[] = {1};
 static int __init ar_init (void ){
-    
-    pr_info("ar: Supported CPUs: %d, online_cpus: %d\n", NR_CPUS, num_online_cpus());
 
-    cinfo = (struct core_info*)kzalloc(sizeof (struct core_info), GFP_KERNEL);
+    pr_info("Supported CPUs: %d, online_cpus: %d\n", NR_CPUS, num_online_cpus());
 
-    /* TODO: Used CPU0 for our experiement, change it to all avaiable cores later  */
-    cinfo->cpu_id = 3;
 
-    /* Initialize with initial setpoint bandwidth values */
-    u.prev_used_bw_mb = g_bw_intial_setpoint_mb[cinfo->cpu_id];
+//    #if defined (AREG_USE_FIFO)
+//    // Initialize the error fifo
+//    int ret = kfifo_alloc(&err_hist_fif    if (ret) {
+//o,ERR_HIST_FIFO_SIZE, GFP_KERNEL);
+//        printk(KERN_ERR "ar: Failed to allocate for kfifo: err_hist_fifo %d\n",ret);
+//        return ret;
+//    }
+//    ret = kfifo_alloc(&err_hist_fifo_D,ERR_HIST_FIFO_SIZE, GFP_KERNEL);
+//    if (ret) {
+//        printk(KERN_ERR "ar: Failed to allocate for kfifo: err_hist_fifo_D %d\n",ret);
+//        return ret;
+//    }
+//
+//    pr_info("ar: KFIFO err_hist_fifo created");
+//    #endif
 
-    u.used_bw_idx = 0;
-    u.used_bw_mb_list[u.used_bw_idx] = u.prev_used_bw_mb;
-    u.used_bw_idx++;
-
-    #if defined (AREG_USE_FIFO)
-    // Initialize the error fifo
-    int ret = kfifo_alloc(&err_hist_fifo,ERR_HIST_FIFO_SIZE, GFP_KERNEL);
-    if (ret) {
-        printk(KERN_ERR "ar: Failed to allocate for kfifo: err_hist_fifo %d\n",ret);
-        return ret;
-    }
-    ret = kfifo_alloc(&err_hist_fifo_D,ERR_HIST_FIFO_SIZE, GFP_KERNEL);
-    if (ret) {
-        printk(KERN_ERR "ar: Failed to allocate for kfifo: err_hist_fifo_D %d\n",ret);
-        return ret;
-    }
-
-    pr_info("ar: KFIFO err_hist_fifo created");
-    #endif 
 
     /* Creat entries in debugfs*/
     ar_init_debugfs();
 
-    init_perf_workq();  
 
-    struct perf_event*  read_event =  init_counter(cinfo->cpu_id,
-                                    convert_mb_to_events(u.prev_used_bw_mb),
-                                    g_read_counter_id,
-                                    event_read_overflow_callback);
-    if (read_event == NULL){
-	    pr_err("ar: read_event %p did not allocate ", read_event);
-        return -1;
-	}
+    //    init_perf_workq();
+    int ret = setup_cpu_info( &cinfo , (u8)1);
+    if (ret != 0){
+        pr_err("setup_cpu() Failed");
+        ar_remove_debugfs();
+    }
 
-   
-    set_read_event(read_event);
-    enable_event(read_event);
+    //Setup CPU info for CPU 2, 3, 4
+    // Initialize the master thread
+    initialize_master();
 
-    
-    thread_kt1 = kthread_create_on_node(thread_kt1_func,
-                                       (void *)((unsigned long)cinfo->cpu_id),
-                                       cpu_to_node(cinfo->cpu_id),
-                                       "kthrottler/%d",cinfo->cpu_id);
-
-	BUG_ON(IS_ERR(thread_kt1));
-	kthread_bind(thread_kt1, cinfo->cpu_id);
-    wake_up_process(thread_kt1);
-
-    pr_info("Starting AR ");
-    
-    hrtimer_init( &ar_regu_timer, CLOCK_MONOTONIC , HRTIMER_MODE_REL_PINNED);
-    ar_regu_timer.function=&ar_regu_timer_callback;
-    last_time = ktime_get();
-    hrtimer_start( &ar_regu_timer, ms_to_ktime(get_regulation_time()), HRTIMER_MODE_REL_PINNED  );
+//    hrtimer_init( &ar_regu_timer, CLOCK_MONOTONIC , HRTIMER_MODE_REL_PINNED);
+//    ar_regu_timer.function=&ar_regu_timer_callback;
+//    last_time = ktime_get();
+//    hrtimer_start( &ar_regu_timer, ms_to_ktime(get_regulation_time()), HRTIMER_MODE_REL_PINNED  );
 
     /* throttled task pointer */
-    cinfo->throttled_task = NULL;
-    init_waitqueue_head(&cinfo->throttle_evt);
+//    cinfo.throttled_task = NULL;
+//    init_waitqueue_head(&cinfo.throttle_evt);
 
-    pr_info("ar: Module Initialized\n");
-    pr_info("ar: Kp=%d/%lld, Ki=%d/%lld (Ti=%lld), Kd=%d/%lld (Td=%lld)\n", 1,Kp_inv, 1,Ki_inv,Ti, 1,Kd_inv, Td);
-    
+    pr_info("Module Initialized\n");
     return 0;
 
 }
@@ -543,30 +525,30 @@ static int __init ar_init (void ){
 
 static void __exit ar_exit( void )
 {
-    struct perf_event *read_event = get_read_event();
-    if (read_event){
-        disable_event(read_event);
-        // read_event= NULL;
-    }
-    
-    kthread_stop(thread_kt1);
-    hrtimer_cancel(&ar_regu_timer);
+
+
+//    kthread_stop(thread_kt1);
+//    hrtimer_cancel(&ar_regu_timer);
 
 #if defined (AREG_USE_FIFO)
 
-    kfifo_free(&err_hist_fifo);
-    pr_info("ar: KFIFO err_hist_fifo freed");
+//    kfifo_free(&err_hist_fifo);
+//    pr_info("ar: KFIFO err_hist_fifo freed");
 #endif
 
     /* Deallocate all core info */
-    struct core_info* cinfo = get_core_info();
-    kfree(cinfo);
-    cinfo=NULL;
-    pr_info("ar: Coreinfo freed\n");
+//    struct core_info* cinfo = get_core_info();
+//    kfree(cinfo);
+//    cinfo=NULL;
+//    pr_info("ar: Coreinfo freed\n");
 
     ar_remove_debugfs();
-    
-	pr_info("ar: Module removed\n");
+
+    deinitialize_master();
+
+    deinitialize_cpu_info(&cinfo , 1);
+
+	pr_info("Module removed\n");
 	return;
 }
 

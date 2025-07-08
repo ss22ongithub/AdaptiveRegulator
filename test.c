@@ -77,71 +77,71 @@ void switch_on_cpu(int cpu);
 
 static struct task_struct* thread_kt1 = NULL;
 
-static int master_thread_func(void * data) {
-    int cpu_id = 1;
-    pr_info("%s: Enter",__func__);
-	struct perf_event_attr attr;
-
-	memset(&attr, 0, sizeof(struct perf_event_attr));
-	attr.type = PERF_TYPE_HARDWARE;
-	attr.config = PERF_COUNT_HW_CACHE_MISSES;
-	attr.size = sizeof(struct perf_event_attr);
-	attr.disabled = 0;
-	attr.exclude_kernel = 0;
-	attr.exclude_hv = 1;
-
-	// Create perf event on CPU 0
-	llc_miss_event = perf_event_create_kernel_counter(
-		&attr, 0, NULL, NULL, NULL);
-
-	if (IS_ERR(llc_miss_event)) {
-		pr_err("Failed to create perf event\n");
-		return PTR_ERR(llc_miss_event);
-	}
-
-//    sched_set_fifo(current);
-
-    while (!kthread_should_stop() ) {
-
-        trace_printk("Wait for Event\n");
-//        wait_event_interruptible( evt,
-//                     cinfo->throttled_task ||
-//                     kthread_should_stop());
+//static int master_thread_func(void * data) {
+//    int cpu_id = 1;
+//    pr_info("%s: Enter",__func__);
+//	struct perf_event_attr attr;
 //
-        if (kthread_should_stop()){
-        	pr_info("test: Stopping thread %s\n",__func__);
-            break;
-        }
-
-//        trace_printk("Throttling...\n");
+//	memset(&attr, 0, sizeof(struct perf_event_attr));
+//	attr.type = PERF_TYPE_HARDWARE;
+//	attr.config = PERF_COUNT_HW_CACHE_MISSES;
+//	attr.size = sizeof(struct perf_event_attr);
+//	attr.disabled = 0;
+//	attr.exclude_kernel = 0;
+//	attr.exclude_hv = 1;
 //
-//        if (cpu_online(cpu_id)) {
-//			set_cpu_online(cpu_id,false);
-//    	    pr_info("%s: cpu down = %d \n",__func__,cpu_id, ret);
-//        }else {
-//          	int ret = cpu_up(cpu_id);
-//            pr_info("%s: cpu_up(%d) = %d \n",__func__,cpu_id, ret);
+//	// Create perf event on CPU 0
+//	llc_miss_event = perf_event_create_kernel_counter(
+//		&attr, 0, NULL, NULL, NULL);
+//
+//	if (IS_ERR(llc_miss_event)) {
+//		pr_err("Failed to create perf event\n");
+//		return PTR_ERR(llc_miss_event);
+//	}
+//
+////    sched_set_fifo(current);
+//
+//    while (!kthread_should_stop() ) {
+//
+//        trace_printk("Wait for Event\n");
+////        wait_event_interruptible( evt,
+////                     cinfo->throttled_task ||
+////                     kthread_should_stop());
+////
+//        if (kthread_should_stop()){
+//        	pr_info("test: Stopping thread %s\n",__func__);
+//            break;
 //        }
-        ssleep(5);
-    }
+//
+////        trace_printk("Throttling...\n");
+////
+////        if (cpu_online(cpu_id)) {
+////			set_cpu_online(cpu_id,false);
+////    	    pr_info("%s: cpu down = %d \n",__func__,cpu_id, ret);
+////        }else {
+////          	int ret = cpu_up(cpu_id);
+////            pr_info("%s: cpu_up(%d) = %d \n",__func__,cpu_id, ret);
+////        }
+//        ssleep(5);
+//    }
+//
+//    pr_info("ar: %s: Exit",__func__);
+//    return 0;
+//}
 
-    pr_info("ar: %s: Exit",__func__);
-    return 0;
-}
-
-
-void switch_off_cpu(int cpu){
-
- if (cpu_online(cpu)) {
-	set_cpu_online(cpu,false);
-	pr_info("%s: cpu down = %d \n",__func__,cpu);
- }
-}
-
-void switch_on_cpu(int cpu){
-  	set_cpu_online(cpu,true);
-	pr_info("%s: cpu up = %d \n",__func__,cpu);
-}
+//
+//void switch_off_cpu(int cpu){
+//
+// if (cpu_online(cpu)) {
+//	set_cpu_online(cpu,false);
+//	pr_info("%s: cpu down = %d \n",__func__,cpu);
+// }
+//}
+//
+//void switch_on_cpu(int cpu){
+//  	set_cpu_online(cpu,true);
+//	pr_info("%s: cpu up = %d \n",__func__,cpu);
+//}
 /**************************************************************************************************************************
  * Module main
  **************************************************************************************************************************/
@@ -154,21 +154,23 @@ static int __init test_init (void ){
 	    the masterthread. Also confirm  CONFIG_HOTPLUG_CPU=y
 		is enabled in the kernel  configuration
 	*/
-    int cpu_id  = 0; //cpuid= 1,2,3 4 are reserved for BW regulation
 
 
-    thread_kt1 = kthread_create_on_node(master_thread_func,
-                                       (void*)NULL,
-                                       cpu_to_node(cpu_id),
-                                       "kcontroller/%d",cpu_id);
-	BUG_ON(IS_ERR(thread_kt1));
-	kthread_bind(thread_kt1, cpu_id);
-    wake_up_process(thread_kt1);
+//    int cpu_id  = 0; //cpuid= 1,2,3 4 are reserved for BW regulation
+//    thread_kt1 = kthread_create_on_node(master_thread_func,
+//                                       (void*)NULL,
+//                                       cpu_to_node(cpu_id),
+//                                       "kcontroller/%d",cpu_id);
+//	BUG_ON(IS_ERR(thread_kt1));
+//	kthread_bind(thread_kt1, cpu_id);
+//    wake_up_process(thread_kt1);
+
+    extern int estimate(void);
+    estimate();
+    pr_info("Exit");
 
 
-
-
-	switch_off_cpu(2);
+//	switch_off_cpu(2);
     return 0;
 
 }
@@ -177,9 +179,9 @@ static int __init test_init (void ){
 static void __exit test_exit( void )
 { 
     //Cleanup
-	switch_on_cpu(2);
+//	switch_on_cpu(2);
 
-    kthread_stop(thread_kt1);
+//    kthread_stop(thread_kt1);
     
 
 	pr_info("test: Module removed\n");

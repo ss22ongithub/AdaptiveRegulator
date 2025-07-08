@@ -2,7 +2,7 @@
  * Included Files
  **************************************************************************/
 
-#include <linux/perf_event.h>
+#include "kernel_headers.h"
 #include "ar.h"
 #include "ar_perfs.h"
 
@@ -84,7 +84,7 @@ struct perf_event *init_counter(int cpu, int sample_period, int counter_id, void
         return NULL;
     }
 
-    pr_info("ar: CPU%d configured counter 0x%x\n", cpu, counter_id);
+    pr_info("CPU%d configured counter 0x%x\n", cpu, counter_id);
     return event;
 }
 
@@ -100,14 +100,14 @@ void event_read_overflow_callback(struct perf_event *event,
 void enable_event(struct perf_event *event){
 
 	perf_event_enable(event);
-    pr_info("ar: Perf event enabled\n");
+    pr_info("ar: Perf event enabled (%llx)\n", event->attr.config);
 }
 
 void disable_event(struct perf_event *event){
 
     perf_event_disable(event);
     perf_event_release_kernel(event);
-    pr_info("ar: Perf event disabled\n");
+    pr_info("Perf event disabled (%llx)\n", event->attr.config);
 
 }
 

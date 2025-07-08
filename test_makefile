@@ -1,10 +1,11 @@
 KVERSION = $(shell uname -r)
 BLDDIR= /lib/modules/$(KVERSION)/build
 
-MODULE_NAME=test
+MODULE_NAME=t
+ccflags-y := -mhard-float -msse
 
 obj-m += $(MODULE_NAME).o
-# $(MODULE_NAME)-objs := test.o
+$(MODULE_NAME)-objs := test.o model.o # random_forest_model.o
 
 all: 
 	make -C $(BLDDIR) M=$(PWD) modules
