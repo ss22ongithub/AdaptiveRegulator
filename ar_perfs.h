@@ -14,7 +14,7 @@ inline void enable_event(struct perf_event *event);
 
 inline void disable_event(struct perf_event *event);
 
-void init_perf_workq(void);
+void init_perf_workq(u8 cpuid);
 
 /* Getter setters for read event */
 

@@ -10,7 +10,7 @@ struct core_info {
     u64 g_read_count_old;
     u8  cpu_id;
     wait_queue_head_t throttle_evt;
-   	struct task_struct * throttled_task;
+   	struct task_struct * throttler_task;
 
 //  Bandwidth utilization parameters
     u64  prev_used_bw_mb; /* BW utilized in the previous regulation interval , units: Mbps*/
@@ -29,7 +29,7 @@ struct utilization {
 	u32  used_bw_idx;
 };
 
-struct core_info* get_core_info(void);
+struct core_info* get_core_info(u8 cpu_id);
 
 struct bw_distribution {
 	u32 time;

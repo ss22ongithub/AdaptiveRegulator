@@ -1,5 +1,7 @@
 #include "kernel_headers.h"
 #include "master.h"
+#include "ar.h"
+#include "ar_perfs.h"
 
 static struct task_struct* mthread = NULL;
 
@@ -29,24 +31,22 @@ static int master_thread_func(void * data) {
     while (!kthread_should_stop() ) {
 
         trace_printk("Wait for Event\n");
-//        wait_event_interruptible( evt,
-//                     cinfo->throttled_task ||
-//                     kthread_should_stop());
-//
         if (kthread_should_stop()){
-        	pr_info("test: Stopping thread %s\n",__func__);
+        	pr_info("Stopping thread %s\n",__func__);
             break;
         }
+        struct core_info* cinfo = get_core_info((u8)1);
+        struct perf_event* read_event = cinfo->read_event;
+//        read_event->pmu->stop(read_event, PERF_EF_UPDATE);
 
-//        trace_printk("Throttling...\n");
-//
-//        if (cpu_online(cpu_id)) {
-//			set_cpu_online(cpu_id,false);
-//    	    pr_info("%s: cpu down = %d \n",__func__,cpu_id, ret);
-//        }else {
-//          	int ret = cpu_up(cpu_id);
-//            pr_info("%s: cpu_up(%d) = %d \n",__func__,cpu_id, ret);
-//        }
+        cinfo->g_read_count_old = cinfo->g_read_count_new;
+        cinfo->g_read_count_new = perf_event_count(read_event);
+        trace_printk("Counter(%llx): New: %llx  Old: %llx\n",
+                     read_event->attr.config,
+                     cinfo->g_read_count_new,
+                     cinfo->g_read_count_old);
+
+//        read_event->pmu->start(read_event, PERF_EF_RELOAD);?
         ssleep(5);
     }
 

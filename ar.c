@@ -83,8 +83,8 @@ const struct bw_distribution rd_bw_setpoints[MAX_BW_SAMPLES] = {
  * Function Declarations 
  **************************************************************************/
 
-static void deinitialize_cpu_info(struct core_info *cinfo , u8 cpu_id);
-static int  setup_cpu_info(struct core_info* cinfo, u8 cpu_id);
+static void deinitialize_cpu_info(u8 cpu_id);
+static int  setup_cpu_info(u8 cpu_id);
 
 
 
@@ -106,13 +106,20 @@ static struct utilization u = {0};
  * Public Types
  **** **********************************************************************/
 
-static struct core_info cinfo;
+static struct core_info all_cinfo[MAX_NO_CPUS + 1];
 
-struct core_info* get_core_info(void){
-    return &cinfo;
+struct core_info* get_core_info(u8 cpu_id){
+    switch(cpu_id){
+        case 1:
+        case 2:
+        case 3:
+        case 4:
+            return &all_cinfo[cpu_id];
+        default:
+            pr_err("Invalid CPU ID %u !!!", cpu_id);
+            return NULL;
+    }
 }
-
-// static struct core_info __percpu *core_info;
 
 
 
@@ -158,37 +165,30 @@ static inline void print_current_context(void)
  **************************************************************************/
 
 
-//TODO: instatiate according to the number of core to be regulated
-static struct task_struct* thread_kt1 = NULL;
+static int throttler_task_func1(void * data){
+    u8 cpu_id = (unsigned long)data;
+    pr_info("%s: Enter CPU(%d)",__func__,cpu_id);
 
-static int thread_kt1_func(void * data){
-    u8 cpunr = (unsigned long)data;
-    pr_info("%s: Enter",__func__);
-
-    
-    struct core_info *cinfo = get_core_info();//per_cpu_ptr(core_info, cpunr);
-
+    struct core_info *cinfo = get_core_info(cpu_id);//per_cpu_ptr(core_info, cpunr);
+    BUG_ON(cinfo == NULL);
     sched_set_fifo(current);
 
-    while (!kthread_should_stop() && cpu_online(cpunr)) {
-
+    while (!kthread_should_stop() && cpu_online(cpu_id)) {
         trace_printk("Wait for Event\n");
-        ssleep(5);
-//        wait_event_interruptible(cinfo->throttle_evt,
-//                     cinfo->throttled_task ||
-//                     kthread_should_stop());
-//
-//        if (kthread_should_stop())
-//            break;
-//
-//        trace_printk("Throttling CPU%u...\n",cpunr);
-//        while (cinfo->throttled_task && !kthread_should_stop())
+        wait_event_interruptible(cinfo->throttle_evt,
+                                 (cinfo->throttler_task ||
+                                kthread_should_stop()) );
+        trace_printk("Got an Event\n");
+        if (kthread_should_stop())
+            break;
+
+        trace_printk("Throttling CPU%u...\n",cpu_id);
+//        while (cinfo->throttler_task && !kthread_should_stop())
 //        {
 //            smp_mb();
 //            cpu_relax();
 //            /* TODO: mwait */
 //        }
-
     }
 
     pr_info("%s: Exit",__func__);
@@ -320,13 +320,13 @@ static void update_stats(u64 cur_used_bw_mb){
     if (u.used_bw_idx >= ar_sw_size){
         u.used_bw_idx = 0;
     }
-    
+
     /* Calculate sliding window average of used bandwdths */
     u64 tmp_avg = 0;
     for(u8 i=0 ; i < ar_sw_size; i++){
         tmp_avg += u.used_bw_mb_list[i];
-    }    
-    u.used_avg_bw_mb = div64_u64(tmp_avg,ar_sw_size);   
+    }
+    u.used_avg_bw_mb = div64_u64(tmp_avg,ar_sw_size);
 }
 
 
@@ -335,7 +335,8 @@ static enum hrtimer_restart ar_regu_timer_callback(struct hrtimer *timer)
 	static s64 setpoint_bw_mb = 0;
 
     struct perf_event *read_event = get_read_event();
-    struct core_info *cinfo = get_core_info();
+    u8 cpu_id = smp_processor_id();
+    struct core_info *cinfo =  get_core_info(cpu_id);
 
     /* Stop the counter and determine the used count in 
        the previous regulation interval
@@ -352,7 +353,7 @@ static enum hrtimer_restart ar_regu_timer_callback(struct hrtimer *timer)
         BUG_ON(orun == 0);
 
         /* unthrottle tasks (if any) */
-        cinfo->throttled_task = NULL;
+        cinfo->throttler_task = NULL;
         u64 init_budget = convert_mb_to_events(g_bw_intial_setpoint_mb[cinfo->cpu_id]);
         local64_set(&read_event->hw.period_left, init_budget);
         /*Re-enabled the counter*/
@@ -411,7 +412,7 @@ static enum hrtimer_restart ar_regu_timer_callback(struct hrtimer *timer)
     BUG_ON(orun == 0);
 
     /* unthrottle tasks (if any) */
-    cinfo->throttled_task = NULL;
+    cinfo->throttler_task = NULL;
 
     /*Re-enabled the counter*/
     read_event->pmu->start(read_event, PERF_EF_RELOAD);
@@ -421,8 +422,10 @@ static enum hrtimer_restart ar_regu_timer_callback(struct hrtimer *timer)
 
 static struct hrtimer ar_regu_timer ;
 
-static int  setup_cpu_info(struct core_info* cinfo, const u8 cpu_id){
-    pr_info("%s: Enter", __func__ );
+static int  setup_cpu_info(const u8 cpu_id){
+    pr_info("%s: Enter CPU(%d)", __func__,cpu_id );
+    struct core_info* cinfo = get_core_info(cpu_id);
+    BUG_ON(cinfo==NULL);
     memset(cinfo, sizeof(struct core_info), 0);
     cinfo->cpu_id = cpu_id;
 
@@ -436,36 +439,58 @@ static int  setup_cpu_info(struct core_info* cinfo, const u8 cpu_id){
     cinfo->read_event =  init_counter(cinfo->cpu_id,
                                      convert_mb_to_events(cinfo->prev_used_bw_mb),
                                      g_read_counter_id,
-                                     event_read_overflow_callback);
+                                     NULL);
     if (cinfo->read_event == NULL){
         pr_err("Read_event %p did not allocate ", cinfo->read_event);
         return -1;
     }
 
-    //set_read_event(cinfo->read_event);
-    //enable_event(cinfo->read_event);
 
+//     set_read_event(cinfo->read_event);
+     enable_event(cinfo->read_event);
 
-    thread_kt1 = kthread_run_on_cpu(thread_kt1_func,
+    cinfo->throttler_task = NULL;
+    //Initialize Wait queue for throttler
+    init_waitqueue_head(&cinfo->throttle_evt);
+
+    /* TODO: Investigate kthread_run_on_cpu API which is  a convenience wrapper
+     * for kthread_creat_on_node + bin + wakeup. This has an issue the incorrect cpuid
+     * displayed in the ps command. This needs to be reconfirmed.
+     * https://docs.kernel.org/next/driver-api/basics.html
+     * */
+#if defined(TODO)
+    cinfo->throttler_task = kthread_run_on_cpu(throttler_task_func1,
                                     (void *)((unsigned long)cpu_id),
                                     cpu_to_node(cpu_id),
-                                    "kthrottler/%u");
+                                    "areg_kthrottler/%u",cpu_id);
 
-    BUG_ON(IS_ERR(thread_kt1));
+    BUG_ON(IS_ERR(cinfo->throttler_task));
+#else
+    cinfo->throttler_task = kthread_create_on_node(throttler_task_func1,
+                                    (void *)((unsigned long)cpu_id),
+                                    cpu_to_node(cpu_id),
+                                    "areg_kthrottler/%u",cpu_id);
+
+    BUG_ON(IS_ERR(cinfo->throttler_task));
+    kthread_bind(cinfo->throttler_task, cpu_id);
+    wake_up_process(cinfo->throttler_task);
+#endif
     pr_info("%s: Exit", __func__ );
     return 0;
 }
 
-static void deinitialize_cpu_info(struct core_info *cinfo , const u8 cpu_id){
-    pr_info("%s:Enter",__func__ );
+static void deinitialize_cpu_info( const u8 cpu_id){
+    pr_info("%s:Enter CPU (%d)",__func__, cpu_id );
+    struct core_info *cinfo = get_core_info(cpu_id);
+    BUG_ON(cinfo == NULL);
+
+    kthread_stop(cinfo->throttler_task);
     if (cinfo->read_event){
         disable_event(cinfo->read_event);
         cinfo->read_event= NULL;
     }
-    kthread_stop(thread_kt1);
-    thread_kt1 = NULL;
+    cinfo->throttler_task = NULL;
     pr_info("%s:Exit",__func__ );
-
 }
 /**************************************************************************************************************************
  * Module main
@@ -475,47 +500,20 @@ static int __init ar_init (void ){
 
     pr_info("Supported CPUs: %d, online_cpus: %d\n", NR_CPUS, num_online_cpus());
 
-
-//    #if defined (AREG_USE_FIFO)
-//    // Initialize the error fifo
-//    int ret = kfifo_alloc(&err_hist_fif    if (ret) {
-//o,ERR_HIST_FIFO_SIZE, GFP_KERNEL);
-//        printk(KERN_ERR "ar: Failed to allocate for kfifo: err_hist_fifo %d\n",ret);
-//        return ret;
-//    }
-//    ret = kfifo_alloc(&err_hist_fifo_D,ERR_HIST_FIFO_SIZE, GFP_KERNEL);
-//    if (ret) {
-//        printk(KERN_ERR "ar: Failed to allocate for kfifo: err_hist_fifo_D %d\n",ret);
-//        return ret;
-//    }
-//
-//    pr_info("ar: KFIFO err_hist_fifo created");
-//    #endif
-
-
     /* Creat entries in debugfs*/
     ar_init_debugfs();
 
+    int ret = setup_cpu_info((u8)1);
 
-    //    init_perf_workq();
-    int ret = setup_cpu_info( &cinfo , (u8)1);
     if (ret != 0){
         pr_err("setup_cpu() Failed");
         ar_remove_debugfs();
     }
 
     //Setup CPU info for CPU 2, 3, 4
+
     // Initialize the master thread
-    initialize_master();
-
-//    hrtimer_init( &ar_regu_timer, CLOCK_MONOTONIC , HRTIMER_MODE_REL_PINNED);
-//    ar_regu_timer.function=&ar_regu_timer_callback;
-//    last_time = ktime_get();
-//    hrtimer_start( &ar_regu_timer, ms_to_ktime(get_regulation_time()), HRTIMER_MODE_REL_PINNED  );
-
-    /* throttled task pointer */
-//    cinfo.throttled_task = NULL;
-//    init_waitqueue_head(&cinfo.throttle_evt);
+//    initialize_master();
 
     pr_info("Module Initialized\n");
     return 0;
@@ -525,28 +523,16 @@ static int __init ar_init (void ){
 
 static void __exit ar_exit( void )
 {
-
-
-//    kthread_stop(thread_kt1);
-//    hrtimer_cancel(&ar_regu_timer);
-
 #if defined (AREG_USE_FIFO)
 
 //    kfifo_free(&err_hist_fifo);
 //    pr_info("ar: KFIFO err_hist_fifo freed");
 #endif
-
-    /* Deallocate all core info */
-//    struct core_info* cinfo = get_core_info();
-//    kfree(cinfo);
-//    cinfo=NULL;
-//    pr_info("ar: Coreinfo freed\n");
-
     ar_remove_debugfs();
 
-    deinitialize_master();
+//    deinitialize_master();
 
-    deinitialize_cpu_info(&cinfo , 1);
+    deinitialize_cpu_info((u8)1);
 
 	pr_info("Module removed\n");
 	return;
