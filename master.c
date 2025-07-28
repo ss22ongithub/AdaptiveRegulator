@@ -5,28 +5,30 @@
 
 static struct task_struct* mthread = NULL;
 
+/* WARNING: This function should be kept strictly re-entrant */
+static void throttle( u8 cpu_id) {
+
+    struct core_info* cinfo = get_core_info(cpu_id);
+    bool t = atomic_read(&cinfo->throttler_task);
+    if ( t ) {
+        pr_err("cinfo->throttler_task=%x, already in throttled state", t);
+        return;
+    }
+    atomic_set(&cinfo->throttler_task,true);
+    wake_up_interruptible(&cinfo->throttle_evt);
+}
+
+/* WARNING: This function should be kept strictly re-entrant */
+static void unthrottle( u8 cpu_id) {
+    struct core_info* cinfo = get_core_info(cpu_id);
+    bool t = atomic_read(&cinfo->throttler_task);
+    pr_info("t = %d",t);
+    atomic_set(&cinfo->throttler_task,false);
+}
 static int master_thread_func(void * data) {
     pr_info("%s: Enter",__func__);
-//	struct perf_event_attr attr;
-//
-//	memset(&attr, 0, sizeof(struct perf_event_attr));
-//	attr.type = PERF_TYPE_HARDWARE;
-//	attr.config = PERF_COUNT_HW_CACHE_MISSES;
-//	attr.size = sizeof(struct perf_event_attr);
-//	attr.disabled = 0;
-//	attr.exclude_kernel = 0;
-//	attr.exclude_hv = 1;
-//
-//	// Create perf event on CPU 0
-//	llc_miss_event = perf_event_create_kernel_counter(
-//		&attr, 0, NULL, NULL, NULL);
-//
-//	if (IS_ERR(llc_miss_event)) {
-//		pr_err("Failed to create perf event\n");
-//		return PTR_ERR(llc_miss_event);
-//	}
 
-//    sched_set_fifo(current);
+    //    sched_set_fifo(current);
 
     while (!kthread_should_stop() ) {
 
@@ -36,18 +38,27 @@ static int master_thread_func(void * data) {
             break;
         }
         struct core_info* cinfo = get_core_info((u8)1);
+        if (cinfo == NULL){
+            pr_err("coreinfo not found exiting %s...",__func__);
+            return -1;
+        }
         struct perf_event* read_event = cinfo->read_event;
 //        read_event->pmu->stop(read_event, PERF_EF_UPDATE);
 
         cinfo->g_read_count_old = cinfo->g_read_count_new;
         cinfo->g_read_count_new = perf_event_count(read_event);
-        trace_printk("Counter(%llx): New: %llx  Old: %llx\n",
+        trace_printk("Counter(%llx): New: %llx  Old: %llx PerfEventState: %d\n",
                      read_event->attr.config,
                      cinfo->g_read_count_new,
-                     cinfo->g_read_count_old);
+                     cinfo->g_read_count_old,
+                     read_event->state);
 
-//        read_event->pmu->start(read_event, PERF_EF_RELOAD);?
-        ssleep(5);
+        throttle(0);
+
+//       TODO: Debug the below statement . This throws an exception
+//       read_event->pmu->start(read_event, PERF_EF_RELOAD);
+        ssleep(10);
+        unthrottle(0);
     }
 
     pr_info("%s: Exit",__func__);

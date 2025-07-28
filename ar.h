@@ -10,7 +10,20 @@ struct core_info {
     u64 g_read_count_old;
     u8  cpu_id;
     wait_queue_head_t throttle_evt;
-   	struct task_struct * throttler_task;
+    /* UPDATE: Currently this variable unused and atomic throttle variable is used instead.
+     * True = core in throttled state  False = core not throttled */
+    atomic_t throttler_task;
+
+//    Pointer to the task that is currently getting throttled. It is used as a condition to check whether
+//    the core should be throttled (restrict sending the LLC load store request).
+//    This pointer is either assigned to NULL (in which case it throttle_thread waiting ) or
+//    assigned to "current" (in which case it throttling is in force ).
+//    struct task_struct * throttler_task;
+
+    /*
+     * Pointer to the throttler kthread context.
+     */
+    struct task_struct * throttler_thread;
 
 //  Bandwidth utilization parameters
     u64  prev_used_bw_mb; /* BW utilized in the previous regulation interval , units: Mbps*/

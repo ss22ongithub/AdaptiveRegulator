@@ -174,11 +174,13 @@ static int throttler_task_func1(void * data){
     sched_set_fifo(current);
 
     while (!kthread_should_stop() && cpu_online(cpu_id)) {
-        trace_printk("Wait for Event\n");
+
+        trace_printk("Waiting for Event CPU(%d)\n", cpu_id);
         wait_event_interruptible(cinfo->throttle_evt,
-                                 (cinfo->throttler_task ||
-                                kthread_should_stop()) );
-        trace_printk("Got an Event\n");
+                                 atomic_read(&cinfo->throttler_task)
+                                 || kthread_should_stop() );
+        trace_printk("Got Event CPU(%d)\n", cpu_id);
+
         if (kthread_should_stop())
             break;
 
@@ -353,7 +355,7 @@ static enum hrtimer_restart ar_regu_timer_callback(struct hrtimer *timer)
         BUG_ON(orun == 0);
 
         /* unthrottle tasks (if any) */
-        cinfo->throttler_task = NULL;
+        atomic_set(&cinfo->throttler_task,false);
         u64 init_budget = convert_mb_to_events(g_bw_intial_setpoint_mb[cinfo->cpu_id]);
         local64_set(&read_event->hw.period_left, init_budget);
         /*Re-enabled the counter*/
@@ -412,7 +414,7 @@ static enum hrtimer_restart ar_regu_timer_callback(struct hrtimer *timer)
     BUG_ON(orun == 0);
 
     /* unthrottle tasks (if any) */
-    cinfo->throttler_task = NULL;
+    atomic_set(&cinfo->throttler_task,0);
 
     /*Re-enabled the counter*/
     read_event->pmu->start(read_event, PERF_EF_RELOAD);
@@ -431,7 +433,6 @@ static int  setup_cpu_info(const u8 cpu_id){
 
     /* Initialize with initial setpoint bandwidth values */
     cinfo->prev_used_bw_mb = g_bw_intial_setpoint_mb[cinfo->cpu_id];
-
     cinfo->used_bw_idx = 0;
     cinfo->used_bw_mb_list[cinfo->used_bw_idx] = cinfo->prev_used_bw_mb;
     cinfo->used_bw_idx++;
@@ -446,50 +447,56 @@ static int  setup_cpu_info(const u8 cpu_id){
     }
 
 
-//     set_read_event(cinfo->read_event);
-     enable_event(cinfo->read_event);
+//  set_read_event(cinfo->read_event);
+    enable_event(cinfo->read_event);
+    atomic_set(&cinfo->throttler_task,false);
 
-    cinfo->throttler_task = NULL;
     //Initialize Wait queue for throttler
     init_waitqueue_head(&cinfo->throttle_evt);
 
     /* TODO: Investigate kthread_run_on_cpu API which is  a convenience wrapper
-     * for kthread_creat_on_node + bin + wakeup. This has an issue the incorrect cpuid
-     * displayed in the ps command. This needs to be reconfirmed.
+     * for kthread_creat_on_node + kthread_bind + wake_up_process.
+     * This has an issue the incorrect cpuid is displayed in the ps command.
+     * This needs to be reconfirmed.
      * https://docs.kernel.org/next/driver-api/basics.html
      * */
 #if defined(TODO)
-    cinfo->throttler_task = kthread_run_on_cpu(throttler_task_func1,
+    cinfo->throttler_thread = kthread_run_on_cpu(throttler_task_func1,
                                     (void *)((unsigned long)cpu_id),
                                     cpu_to_node(cpu_id),
                                     "areg_kthrottler/%u",cpu_id);
 
     BUG_ON(IS_ERR(cinfo->throttler_task));
 #else
-    cinfo->throttler_task = kthread_create_on_node(throttler_task_func1,
+    cinfo->throttler_thread = kthread_create_on_node(throttler_task_func1,
                                     (void *)((unsigned long)cpu_id),
                                     cpu_to_node(cpu_id),
                                     "areg_kthrottler/%u",cpu_id);
 
-    BUG_ON(IS_ERR(cinfo->throttler_task));
-    kthread_bind(cinfo->throttler_task, cpu_id);
-    wake_up_process(cinfo->throttler_task);
+    BUG_ON(IS_ERR(cinfo->throttler_thread));
+    kthread_bind(cinfo->throttler_thread, cpu_id);
+    wake_up_process(cinfo->throttler_thread);
 #endif
     pr_info("%s: Exit", __func__ );
     return 0;
 }
 
 static void deinitialize_cpu_info( const u8 cpu_id){
+
     pr_info("%s:Enter CPU (%d)",__func__, cpu_id );
     struct core_info *cinfo = get_core_info(cpu_id);
     BUG_ON(cinfo == NULL);
 
-    kthread_stop(cinfo->throttler_task);
+    if(cinfo->throttler_thread){
+        kthread_stop(cinfo->throttler_thread);
+        atomic_set(&cinfo->throttler_task,false);
+        cinfo->throttler_thread = NULL;
+    }
+
     if (cinfo->read_event){
         disable_event(cinfo->read_event);
         cinfo->read_event= NULL;
     }
-    cinfo->throttler_task = NULL;
     pr_info("%s:Exit",__func__ );
 }
 /**************************************************************************************************************************
@@ -500,20 +507,49 @@ static int __init ar_init (void ){
 
     pr_info("Supported CPUs: %d, online_cpus: %d\n", NR_CPUS, num_online_cpus());
 
-    /* Creat entries in debugfs*/
-    ar_init_debugfs();
+    //Initialise core infos
+    memset(all_cinfo, 0, sizeof(all_cinfo));
 
+    //Setup CPU info for CPU 1,2, 3, 4
     int ret = setup_cpu_info((u8)1);
-
     if (ret != 0){
         pr_err("setup_cpu() Failed");
-        ar_remove_debugfs();
+        deinitialize_cpu_info(1);
+        return -ENOMEM;
     }
 
-    //Setup CPU info for CPU 2, 3, 4
+    ret = setup_cpu_info((u8)2);
+    if (ret != 0){
+        pr_err("setup_cpu() Failed");
+        deinitialize_cpu_info((u8)2);
+        deinitialize_cpu_info((u8)1);
+        return -ENOMEM;
+    }
 
-    // Initialize the master thread
-//    initialize_master();
+    ret = setup_cpu_info((u8)3);
+    if (ret != 0){
+        pr_err("setup_cpu() Failed");
+        deinitialize_cpu_info((u8)3);
+        deinitialize_cpu_info((u8)2);
+        deinitialize_cpu_info((u8)1);
+        return -ENOMEM;
+    }
+
+    ret = setup_cpu_info((u8)4);
+    if (ret != 0){
+        pr_err("setup_cpu() Failed");
+        deinitialize_cpu_info((u8)4);
+        deinitialize_cpu_info((u8)3);
+        deinitialize_cpu_info((u8)2);
+        deinitialize_cpu_info((u8)1);
+        return -ENOMEM;
+    }
+
+    /* Initialize the master thread */
+    initialize_master();
+
+    /* Create entries in debugfs */
+    ar_init_debugfs();
 
     pr_info("Module Initialized\n");
     return 0;
@@ -528,13 +564,17 @@ static void __exit ar_exit( void )
 //    kfifo_free(&err_hist_fifo);
 //    pr_info("ar: KFIFO err_hist_fifo freed");
 #endif
+    /* Keep the deinitializing sequence reverse of the allocation sequence in __init function */
     ar_remove_debugfs();
 
-//    deinitialize_master();
+    deinitialize_master();
 
     deinitialize_cpu_info((u8)1);
+    deinitialize_cpu_info((u8)2);
+    deinitialize_cpu_info((u8)3);
+    deinitialize_cpu_info((u8)4);
 
-	pr_info("Module removed\n");
+    pr_info("Module removed\n");
 	return;
 }
 
@@ -543,3 +583,4 @@ module_exit(ar_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Sudarshan S <sudarshan.srinivasan@research.iiit.ac.in>");
+
