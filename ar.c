@@ -185,12 +185,13 @@ static int throttler_task_func1(void * data){
             break;
 
         trace_printk("Throttling CPU%u...\n",cpu_id);
-//        while (cinfo->throttler_task && !kthread_should_stop())
-//        {
-//            smp_mb();
-//            cpu_relax();
-//            /* TODO: mwait */
-//        }
+       while (atomic_read(&cinfo->throttler_task)
+                 && !kthread_should_stop())
+       {
+           smp_mb();
+           cpu_relax();
+           /* TODO: mwait */
+       }
     }
 
     pr_info("%s: Exit",__func__);

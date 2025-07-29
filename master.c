@@ -8,8 +8,13 @@ static struct task_struct* mthread = NULL;
 /* WARNING: This function should be kept strictly re-entrant */
 static void throttle( u8 cpu_id) {
 
+    if (cpu_id == 0){
+        pr_err("%s: cpu_id cannot be 0!",__func__);
+        return;
+    }
     struct core_info* cinfo = get_core_info(cpu_id);
     bool t = atomic_read(&cinfo->throttler_task);
+    pr_info("%s: CPU(%d), t = %d",__func__,cpu_id,t);
     if ( t ) {
         pr_err("cinfo->throttler_task=%x, already in throttled state", t);
         return;
@@ -20,9 +25,13 @@ static void throttle( u8 cpu_id) {
 
 /* WARNING: This function should be kept strictly re-entrant */
 static void unthrottle( u8 cpu_id) {
+    if (cpu_id == 0){
+        pr_err("%s: cpu_id cannot be 0!",__func__);
+        return;
+    }
     struct core_info* cinfo = get_core_info(cpu_id);
     bool t = atomic_read(&cinfo->throttler_task);
-    pr_info("t = %d",t);
+    pr_info("%s: CPU(%d) t = %d",__func__,cpu_id,t);
     atomic_set(&cinfo->throttler_task,false);
 }
 static int master_thread_func(void * data) {
@@ -32,7 +41,7 @@ static int master_thread_func(void * data) {
 
     while (!kthread_should_stop() ) {
 
-        trace_printk("Wait for Event\n");
+        trace_printk("Master thread looping\n");
         if (kthread_should_stop()){
         	pr_info("Stopping thread %s\n",__func__);
             break;
@@ -53,12 +62,18 @@ static int master_thread_func(void * data) {
                      cinfo->g_read_count_old,
                      read_event->state);
 
-        throttle(0);
+        throttle(1);
+        throttle(2);
+        throttle(3);
+        throttle(4);
 
 //       TODO: Debug the below statement . This throws an exception
 //       read_event->pmu->start(read_event, PERF_EF_RELOAD);
-        ssleep(10);
-        unthrottle(0);
+        ssleep(6);
+        unthrottle(1);
+        unthrottle(2);
+        unthrottle(3);
+        unthrottle(4);
     }
 
     pr_info("%s: Exit",__func__);
