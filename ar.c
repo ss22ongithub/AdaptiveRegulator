@@ -85,7 +85,7 @@ const struct bw_distribution rd_bw_setpoints[MAX_BW_SAMPLES] = {
 
 static void deinitialize_cpu_info(u8 cpu_id);
 static int  setup_cpu_info(u8 cpu_id);
-
+static void ar_handle_read_overflow(struct irq_work *entry);
 
 
 /**************************************************************************
@@ -175,16 +175,16 @@ static int throttler_task_func1(void * data){
 
     while (!kthread_should_stop() && cpu_online(cpu_id)) {
 
-        trace_printk("Waiting for Event CPU(%d)\n", cpu_id);
+        trace_printk("CPU(%d):Waiting for Event\n", cpu_id);
         wait_event_interruptible(cinfo->throttle_evt,
                                  atomic_read(&cinfo->throttler_task)
                                  || kthread_should_stop() );
-        trace_printk("Got Event CPU(%d)\n", cpu_id);
+        trace_printk("CPU(%d):Got Event\n", cpu_id);
 
         if (kthread_should_stop())
             break;
 
-        trace_printk("Throttling CPU%u...\n",cpu_id);
+        trace_printk("CPU(%d):Throttling...\n",cpu_id);
        while (atomic_read(&cinfo->throttler_task)
                  && !kthread_should_stop())
        {
@@ -197,6 +197,40 @@ static int throttler_task_func1(void * data){
     pr_info("%s: Exit",__func__);
     return 0;
 }
+
+/* Callback when read counter echuasts its budget*/
+static void read_event_overflow_callback(struct perf_event *event,
+                    struct perf_sample_data *data,
+                    struct pt_regs *regs)
+{
+    u8 cpu_id = smp_processor_id();
+    if (cpu_id == 0){
+        trace_printk("%s: CPU(%d) not expected here \n",__func__,cpu_id);
+        return;
+    }
+
+    struct core_info *cinfo = get_core_info(cpu_id);
+    BUG_ON(!cinfo);
+    irq_work_queue(&cinfo->read_irq_work);
+}
+
+static void ar_handle_read_overflow(struct irq_work *entry)
+{
+    u8 cpu_id = smp_processor_id();
+    if (cpu_id == 0){
+        trace_printk("%s: CPU(%d) not expected here\n",__func__,cpu_id);
+        return;
+    }
+    BUG_ON(in_nmi() || !in_irq());
+
+    struct core_info *cinfo = get_core_info(cpu_id);
+    BUG_ON(!cinfo);
+
+    //Activate Throttling
+    atomic_set(&cinfo->throttler_task,true);
+    wake_up_interruptible(&cinfo->throttle_evt);    
+}
+
 
 /**************************************************************************
  * Other Utils
@@ -423,8 +457,6 @@ static enum hrtimer_restart ar_regu_timer_callback(struct hrtimer *timer)
 }
 
 
-static struct hrtimer ar_regu_timer ;
-
 static int  setup_cpu_info(const u8 cpu_id){
     pr_info("%s: Enter CPU(%d)", __func__,cpu_id );
     struct core_info* cinfo = get_core_info(cpu_id);
@@ -441,14 +473,17 @@ static int  setup_cpu_info(const u8 cpu_id){
     cinfo->read_event =  init_counter(cinfo->cpu_id,
                                      convert_mb_to_events(cinfo->prev_used_bw_mb),
                                      g_read_counter_id,
-                                     NULL);
+                                     read_event_overflow_callback);
     if (cinfo->read_event == NULL){
         pr_err("Read_event %p did not allocate ", cinfo->read_event);
         return -1;
     }
 
 
-//  set_read_event(cinfo->read_event);
+    /* Initialize NMI irq_work_queue */
+    init_irq_work(&cinfo->read_irq_work, ar_handle_read_overflow);
+
+    // set_read_event(cinfo->read_event);
     enable_event(cinfo->read_event);
     atomic_set(&cinfo->throttler_task,false);
 
@@ -503,7 +538,7 @@ static void deinitialize_cpu_info( const u8 cpu_id){
 /**************************************************************************************************************************
  * Module main
  **************************************************************************************************************************/
-const u8 regulated_cpu_ids[] = {1};
+
 static int __init ar_init (void ){
 
     pr_info("Supported CPUs: %d, online_cpus: %d\n", NR_CPUS, num_online_cpus());

@@ -5,8 +5,13 @@
 
 static struct task_struct* mthread = NULL;
 
+/* Unused functions*/
+static void throttle( u8 cpu_id) __attribute__((unused));
+static void unthrottle( u8 cpu_id) __attribute__((unused));
+
 /* WARNING: This function should be kept strictly re-entrant */
-static void throttle( u8 cpu_id) {
+static void throttle( u8 cpu_id)
+{
 
     if (cpu_id == 0){
         pr_err("%s: cpu_id cannot be 0!",__func__);
@@ -14,7 +19,7 @@ static void throttle( u8 cpu_id) {
     }
     struct core_info* cinfo = get_core_info(cpu_id);
     bool t = atomic_read(&cinfo->throttler_task);
-    pr_info("%s: CPU(%d), t = %d",__func__,cpu_id,t);
+    pr_debug("%s: CPU(%d), t = %d",__func__,cpu_id,t);
     if ( t ) {
         pr_err("cinfo->throttler_task=%x, already in throttled state", t);
         return;
@@ -31,9 +36,12 @@ static void unthrottle( u8 cpu_id) {
     }
     struct core_info* cinfo = get_core_info(cpu_id);
     bool t = atomic_read(&cinfo->throttler_task);
-    pr_info("%s: CPU(%d) t = %d",__func__,cpu_id,t);
+    pr_debug("%s: CPU(%d) t = %d",__func__,cpu_id,t);
     atomic_set(&cinfo->throttler_task,false);
 }
+
+const u8 CPUID = 1;
+
 static int master_thread_func(void * data) {
     pr_info("%s: Enter",__func__);
 
@@ -46,13 +54,12 @@ static int master_thread_func(void * data) {
         	pr_info("Stopping thread %s\n",__func__);
             break;
         }
-        struct core_info* cinfo = get_core_info((u8)1);
+        struct core_info* cinfo = get_core_info(CPUID);
         if (cinfo == NULL){
             pr_err("coreinfo not found exiting %s...",__func__);
             return -1;
         }
         struct perf_event* read_event = cinfo->read_event;
-//        read_event->pmu->stop(read_event, PERF_EF_UPDATE);
 
         cinfo->g_read_count_old = cinfo->g_read_count_new;
         cinfo->g_read_count_new = perf_event_count(read_event);
@@ -61,15 +68,10 @@ static int master_thread_func(void * data) {
                      cinfo->g_read_count_new,
                      cinfo->g_read_count_old,
                      read_event->state);
+        // cinfo->g_read_count_used = cinfo->g_read_count_new - cinfo->g_read_count_old; 
 
-        throttle(1);
-        throttle(2);
-        throttle(3);
-        throttle(4);
 
-//       TODO: Debug the below statement . This throws an exception
-//       read_event->pmu->start(read_event, PERF_EF_RELOAD);
-        ssleep(6);
+        ssleep(1);
         unthrottle(1);
         unthrottle(2);
         unthrottle(3);
