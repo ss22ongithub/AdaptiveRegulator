@@ -86,6 +86,8 @@ const struct bw_distribution rd_bw_setpoints[MAX_BW_SAMPLES] = {
 static void deinitialize_cpu_info(u8 cpu_id);
 static int  setup_cpu_info(u8 cpu_id);
 static void ar_handle_read_overflow(struct irq_work *entry);
+static enum hrtimer_restart new_ar_regu_timer_callback(struct hrtimer *timer);
+
 
 
 /**************************************************************************
@@ -97,7 +99,7 @@ module_param(g_read_counter_id, hexint,  S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
 // static int g_period_us=1000;
 static u64 g_bw_intial_setpoint_mb[MAX_NO_CPUS+1] = {0,1000,1000,1000,1000}; /*Bandwidth setpoints in MB/s */
 // static u64 g_bw_max_mb[MAX_NO_CPUS+1] = {0,2000,2000, 2000, 2000}; /*Bandwidth setpoints in MB/s */
-static ktime_t last_time;
+
 
 static struct utilization u = {0};
 
@@ -158,11 +160,58 @@ static inline void print_current_context(void)
              (int)in_nmi(), (int)irqs_disabled());
 }
 
+static void __start_timer_on_cpu(void* data)
+{
+    struct core_info* cinfo = (struct core_info*)data;
+    BUG_ON(!cinfo);
+    /* Initialize the regulation timer */
+    hrtimer_init(&cinfo->reg_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL_PINNED);
+    
+    /* initialize timer */
+        hrtimer_init(&cinfo->reg_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL_PINNED);
+        cinfo->reg_timer.function = &new_ar_regu_timer_callback;
+
+    /* start timer */
+        hrtimer_start(&cinfo->reg_timer, ms_to_ktime(get_regulation_time()),
+                      HRTIMER_MODE_REL_PINNED);
+
+}
 
 
 /**************************************************************************
  * Callbacks and Handlers
  **************************************************************************/
+
+static enum hrtimer_restart new_ar_regu_timer_callback(struct hrtimer *timer)
+{
+    u8 cpu_id = smp_processor_id();
+    trace_printk("\n");
+
+    struct core_info *cinfo =  get_core_info(cpu_id);
+    BUG_ON(!cinfo);
+
+    /* 
+       Stop the counter and determine the used count in 
+       the previous regulation interval
+    */
+
+    cinfo->read_event->pmu->stop(cinfo->read_event, PERF_EF_UPDATE);
+
+    /* TODO:  read from the latest model estimate */
+    u64 read_event_new_budget = convert_mb_to_events(g_bw_intial_setpoint_mb[cpu_id]);
+    local64_set(&cinfo->read_event->hw.period_left, read_event_new_budget);  
+
+    //unthrottle if the core is in throttle state
+    atomic_set(&cinfo->throttler_task,false);
+
+    hrtimer_forward_now(timer, ms_to_ktime(get_regulation_time()));
+
+    /*Re-enabled the counter*/
+    cinfo->read_event->pmu->start(cinfo->read_event, PERF_EF_RELOAD);
+
+    /*Re-enabled the timer*/
+    return HRTIMER_RESTART;
+}
 
 
 static int throttler_task_func1(void * data){
@@ -221,14 +270,17 @@ static void ar_handle_read_overflow(struct irq_work *entry)
         trace_printk("%s: CPU(%d) not expected here\n",__func__,cpu_id);
         return;
     }
+
     BUG_ON(in_nmi() || !in_irq());
+    trace_printk("\n");
 
     struct core_info *cinfo = get_core_info(cpu_id);
     BUG_ON(!cinfo);
 
     //Activate Throttling
     atomic_set(&cinfo->throttler_task,true);
-    wake_up_interruptible(&cinfo->throttle_evt);    
+    wake_up_interruptible(&cinfo->throttle_evt);
+
 }
 
 
@@ -246,7 +298,7 @@ static const s64 Td = 20;
 
 static s64 do_pid_control(s64 error){
 
-    // static ktime_t last_time = 0;
+    
 
     static s64 sum_of_err=0;
     
@@ -257,14 +309,14 @@ static s64 do_pid_control(s64 error){
 #if defined (AREG_USE_FIFO)
     int ret = kfifo_in(&err_hist_fifo, &error, 1);    
     if (ret != 1){
-        trace_printk("AREG: err_hist_fifo add Failed");
+        trace_printk("AREG: err_hist_fifo add Failed\n");
     }else{
         trace_printk("AREG: err_hist_fifo added\n");
     }
 
     ret = kfifo_in(&err_hist_fifo_D, &error, 1);    
     if (ret != 1){
-        trace_printk("AREG: err_hist_fifo_D add Failed");
+        trace_printk("AREG: err_hist_fifo_D add Failed\n");
     }else{
         trace_printk("AREG: err_hist_fifo_D added\n");
     }
@@ -316,7 +368,7 @@ static s64 do_pid_control(s64 error){
     trace_printk("AREG:%s: P=%lld I=%lld D=%lld out=%lld\n",__func__, P, I, D,out);
 
 
-    // last_time = current_time;
+    
     
     return out;
 }
@@ -336,7 +388,7 @@ static u32 get_setpoint(void){
         samples = 0;
         sp_idx++;
         if ( sp_idx >= MAX_BW_SAMPLES ) {
-            trace_printk("AREG: Error: sp_idx %u > %u. Resetting", sp_idx, MAX_BW_SAMPLES);
+            trace_printk("AREG: Error: sp_idx %u > %u. Resetting\n", sp_idx, MAX_BW_SAMPLES);
             sp_idx = 0;
         }
     }
@@ -369,37 +421,38 @@ static void update_stats(u64 cur_used_bw_mb){
 
 static enum hrtimer_restart ar_regu_timer_callback(struct hrtimer *timer)
 {
-	static s64 setpoint_bw_mb = 0;
-
-    struct perf_event *read_event = get_read_event();
-    u8 cpu_id = smp_processor_id();
+	u8 cpu_id = smp_processor_id();
     struct core_info *cinfo =  get_core_info(cpu_id);
+    trace_printk("CPU(%d): %s\n", cinfo->cpu_id,__func__);
 
-    /* Stop the counter and determine the used count in 
+    /* 
+       Stop the counter and determine the used count in 
        the previous regulation interval
     */
-    read_event->pmu->stop(read_event, PERF_EF_UPDATE);
-    cinfo->g_read_count_new = perf_event_count(read_event);
-    s64 read_count_used = cinfo->g_read_count_new - cinfo->g_read_count_old;
 
-    if (!read_count_used){
-        // No change in the counter , so no  request was sent => possibly no load running on the core 
-        trace_printk("AREG: No change in read counter on core%u.\n",cinfo->cpu_id);
-        /* forward timer */
-        int orun = hrtimer_forward_now(timer, ms_to_ktime(get_regulation_time()));
-        BUG_ON(orun == 0);
 
-        /* unthrottle tasks (if any) */
-        atomic_set(&cinfo->throttler_task,false);
-        u64 init_budget = convert_mb_to_events(g_bw_intial_setpoint_mb[cinfo->cpu_id]);
-        local64_set(&read_event->hw.period_left, init_budget);
-        /*Re-enabled the counter*/
-        read_event->pmu->start(read_event, PERF_EF_RELOAD);
-        return HRTIMER_RESTART;
-    }
 
-    u.cur_used_bw_mb = convert_events_to_mb(read_count_used);
-    update_stats(u.cur_used_bw_mb);
+    // cinfo->g_read_count_new = perf_event_count(read_event);
+    // s64 read_count_used = cinfo->g_read_count_new - cinfo->g_read_count_old;
+
+    // if (!read_count_used){
+    //     // No change in the counter , so no  request was sent => possibly no load running on the core 
+    //     trace_printk("AREG: No change in read counter on core%u.\n",cinfo->cpu_id);
+    //     /* forward timer */
+    //     int orun = hrtimer_forward_now(timer, ms_to_ktime(get_regulation_time()));
+    //     BUG_ON(orun == 0);
+
+    //     /* unthrottle tasks (if any) */
+    //     atomic_set(&cinfo->throttler_task,false);
+    //     u64 init_budget = convert_mb_to_events(g_bw_intial_setpoint_mb[cinfo->cpu_id]);
+    //     local64_set(&read_event->hw.period_left, init_budget);
+    //     /*Re-enabled the counter*/
+    //     read_event->pmu->start(read_event, PERF_EF_RELOAD);
+    //     return HRTIMER_RESTART;
+    // }
+
+    // u.cur_used_bw_mb = convert_events_to_mb(read_count_used);
+    // update_stats(u.cur_used_bw_mb);
 
 
     /*
@@ -407,53 +460,54 @@ static enum hrtimer_restart ar_regu_timer_callback(struct hrtimer *timer)
     u.prev_used_bw_mb represents the BW used in the last regulation interval (t-2)
     */
 
-    s64 delta = 0;  
-    s64 new_alloc_budg_mb = u.cur_used_bw_mb;
+    // s64 delta = 0;  
+    // s64 new_alloc_budg_mb = u.cur_used_bw_mb;
 
-    setpoint_bw_mb = get_setpoint();
-    s64 error_mb = setpoint_bw_mb - u.used_avg_bw_mb;
-    if ( 0 != error_mb ){
+    // setpoint_bw_mb = get_setpoint();
+    // s64 error_mb = setpoint_bw_mb - u.used_avg_bw_mb;
+    // if ( 0 != error_mb ){
 
-        delta = do_pid_control(error_mb);
-        new_alloc_budg_mb = u.cur_used_bw_mb + delta;
-        if (new_alloc_budg_mb < 0 ){
-            new_alloc_budg_mb = 0;
-        }
-    }
+    //     delta = do_pid_control(error_mb);
+    //     new_alloc_budg_mb = u.cur_used_bw_mb + delta;
+    //     if (new_alloc_budg_mb < 0 ){
+    //         new_alloc_budg_mb = 0;
+    //     }
+    // }
 
-    u64 read_event_new_budget = convert_mb_to_events(new_alloc_budg_mb);
+    // u64 read_event_new_budget = convert_mb_to_events(new_alloc_budg_mb);
 
     
-    //trace_printk("AREG:err_mb=%lld n_budg=%lld delta=%lld cor_mb=%lld\n", error_mb,read_event_new_budget,delta,new_alloc_budg_mb);
-    trace_printk("used_avg_bw=%lld cur_used_bw_mb=%lld u.prev_used_bw_mb=%lld  sp_mb=%lld err_mb=%lld delta=%lld cor_mb=%lld n_budg=%lld o_cnt=%llu n_cnt=%llu used_cnt=%lld \n",
-    u.used_avg_bw_mb,
-    u.cur_used_bw_mb,
-    u.prev_used_bw_mb,
-    setpoint_bw_mb,
-    error_mb, delta, 
-    new_alloc_budg_mb,
-    read_event_new_budget,
-    cinfo->g_read_count_old, 
-    cinfo->g_read_count_new, 
-    read_count_used);
+    // //trace_printk("AREG:err_mb=%lld n_budg=%lld delta=%lld cor_mb=%lld\n", error_mb,read_event_new_budget,delta,new_alloc_budg_mb);
+    // trace_printk("used_avg_bw=%lld cur_used_bw_mb=%lld u.prev_used_bw_mb=%lld  sp_mb=%lld err_mb=%lld delta=%lld cor_mb=%lld n_budg=%lld o_cnt=%llu n_cnt=%llu used_cnt=%lld \n",
+    // u.used_avg_bw_mb,
+    // u.cur_used_bw_mb,
+    // u.prev_used_bw_mb,
+    // setpoint_bw_mb,
+    // error_mb, delta, 
+    // new_alloc_budg_mb,
+    // read_event_new_budget,
+    // cinfo->g_read_count_old, 
+    // cinfo->g_read_count_new, 
+    // read_count_used);
 
 
-    local64_set(&read_event->hw.period_left, read_event_new_budget);  //??? SOME major issue here
+    // local64_set(&read_event->hw.period_left, read_event_new_budget);  //??? SOME major issue here
 
-    u.prev_used_bw_mb = u.cur_used_bw_mb;
-    cinfo->g_read_count_old = cinfo->g_read_count_new;
+    // u.prev_used_bw_mb = u.cur_used_bw_mb;
+    // cinfo->g_read_count_old = cinfo->g_read_count_new;
 
 
-    /* forward timer */
-    int orun = hrtimer_forward_now(timer, ms_to_ktime(get_regulation_time()));
-    BUG_ON(orun == 0);
+    // /* forward timer */
+    // int orun = hrtimer_forward_now(timer, ms_to_ktime(get_regulation_time()));
+    // BUG_ON(orun == 0);
 
-    /* unthrottle tasks (if any) */
-    atomic_set(&cinfo->throttler_task,0);
+    // /* unthrottle tasks (if any) */
+    // atomic_set(&cinfo->throttler_task,0);
+
 
     /*Re-enabled the counter*/
-    read_event->pmu->start(read_event, PERF_EF_RELOAD);
-    return HRTIMER_RESTART;
+    // cinfo->read_event->pmu->start(read_event, PERF_EF_RELOAD);
+    return HRTIMER_NORESTART;
 }
 
 
@@ -483,9 +537,9 @@ static int  setup_cpu_info(const u8 cpu_id){
     /* Initialize NMI irq_work_queue */
     init_irq_work(&cinfo->read_irq_work, ar_handle_read_overflow);
 
-    // set_read_event(cinfo->read_event);
-    enable_event(cinfo->read_event);
-    atomic_set(&cinfo->throttler_task,false);
+    /* Disable the throttle flag */
+    atomic_set(&cinfo->throttler_task,false);   
+    
 
     //Initialize Wait queue for throttler
     init_waitqueue_head(&cinfo->throttle_evt);
@@ -513,6 +567,13 @@ static int  setup_cpu_info(const u8 cpu_id){
     kthread_bind(cinfo->throttler_thread, cpu_id);
     wake_up_process(cinfo->throttler_thread);
 #endif
+
+    /* Enable perf event */
+    enable_event(cinfo->read_event);
+
+    /* Start the timer on the specific core*/
+    // smp_call_function_single(cpu_id,__start_timer_on_cpu,cinfo,false);
+
     pr_info("%s: Exit", __func__ );
     return 0;
 }
@@ -522,6 +583,9 @@ static void deinitialize_cpu_info( const u8 cpu_id){
     pr_info("%s:Enter CPU (%d)",__func__, cpu_id );
     struct core_info *cinfo = get_core_info(cpu_id);
     BUG_ON(cinfo == NULL);
+
+    //Stop the timer
+    hrtimer_cancel(&cinfo->reg_timer);
 
     if(cinfo->throttler_thread){
         kthread_stop(cinfo->throttler_thread);
@@ -601,6 +665,7 @@ static void __exit ar_exit( void )
 //    pr_info("ar: KFIFO err_hist_fifo freed");
 #endif
     /* Keep the deinitializing sequence reverse of the allocation sequence in __init function */
+
     ar_remove_debugfs();
 
     deinitialize_master();

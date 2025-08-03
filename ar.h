@@ -39,8 +39,7 @@ struct core_info {
     struct perf_event*  read_event;
 
 //Timer related
-    struct hrtimer regulation_timer;
-
+    struct hrtimer reg_timer;
     struct irq_work read_irq_work; 
 };
 struct utilization {

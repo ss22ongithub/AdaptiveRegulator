@@ -71,11 +71,7 @@ static int master_thread_func(void * data) {
         // cinfo->g_read_count_used = cinfo->g_read_count_new - cinfo->g_read_count_old; 
 
 
-        ssleep(1);
-        unthrottle(1);
-        unthrottle(2);
-        unthrottle(3);
-        unthrottle(4);
+        ssleep(5);
     }
 
     pr_info("%s: Exit",__func__);
