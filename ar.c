@@ -29,28 +29,7 @@ static DECLARE_KFIFO_PTR(err_hist_fifo, s64);
 static DECLARE_KFIFO_PTR(err_hist_fifo_D, s64);
 #endif
 
-const struct bw_distribution rd_bw_setpoints[MAX_BW_SAMPLES] = {
-    {.time = 1, .rd_avg_bw = 1},
-    {.time = 2, .rd_avg_bw=3217},
-    {.time = 3, .rd_avg_bw=4384},
-    {.time = 4, .rd_avg_bw=4761},
-    {.time = 5, .rd_avg_bw=4804},
-    {.time = 6, .rd_avg_bw=4256},
-    {.time = 7, .rd_avg_bw=4844},
-    {.time = 8, .rd_avg_bw=4834},
-    {.time = 9, .rd_avg_bw=4975},
-    {.time = 10, .rd_avg_bw=3558},
-    {.time = 11, .rd_avg_bw=3948},
-    {.time = 12, .rd_avg_bw=4314},
-    {.time = 13, .rd_avg_bw=4531},
-    {.time = 14, .rd_avg_bw=4491},
-    {.time = 15, .rd_avg_bw=4532},
-    {.time = 16, .rd_avg_bw=4544},
-    {.time = 17, .rd_avg_bw=4530},
-    {.time = 18, .rd_avg_bw=4523},
-    {.time = 19, .rd_avg_bw=599},
-    {.time = 20, .rd_avg_bw=1}
-};
+
 
 /**************************************************************************
  * Public Definitions
@@ -83,8 +62,8 @@ const struct bw_distribution rd_bw_setpoints[MAX_BW_SAMPLES] = {
  * Function Declarations 
  **************************************************************************/
 
-static void deinitialize_cpu_info(u8 cpu_id);
-static int  setup_cpu_info(u8 cpu_id);
+static void deinitialize_cpu_info(const u8 cpu_id);
+static int  setup_cpu_info(const u8 cpu_id);
 static void ar_handle_read_overflow(struct irq_work *entry);
 static enum hrtimer_restart new_ar_regu_timer_callback(struct hrtimer *timer);
 
@@ -122,6 +101,7 @@ struct core_info* get_core_info(u8 cpu_id){
             return NULL;
     }
 }
+
 
 
 
@@ -194,12 +174,11 @@ static enum hrtimer_restart new_ar_regu_timer_callback(struct hrtimer *timer)
        Stop the counter and determine the used count in 
        the previous regulation interval
     */
-
     cinfo->read_event->pmu->stop(cinfo->read_event, PERF_EF_UPDATE);
 
-    /* TODO:  read from the latest model estimate */
-    u64 read_event_new_budget = convert_mb_to_events(g_bw_intial_setpoint_mb[cpu_id]);
-    local64_set(&cinfo->read_event->hw.period_left, read_event_new_budget);  
+    u64 read_event_new_budget = atomic64_read(&cinfo->budget_est);
+    local64_set(&cinfo->read_event->hw.period_left, read_event_new_budget);
+    trace_printk("New budget: %llu",read_event_new_budget);
 
     //unthrottle if the core is in throttle state
     atomic_set(&cinfo->throttler_task,false);
@@ -393,7 +372,7 @@ static u32 get_setpoint(void){
         }
     }
     samples++;
-    sp = rd_bw_setpoints[sp_idx].rd_avg_bw;
+//    sp = rd_bw_setpoints[sp_idx].rd_avg_bw;
     
     trace_printk("AREG: sp_idx=%u rd_bw_setpoint=%u \n",sp_idx,sp);
 
@@ -533,6 +512,11 @@ static int  setup_cpu_info(const u8 cpu_id){
         return -1;
     }
 
+//    int ret = fifo_alloc(&cinfo->cfifo, FIFO_SIZE*sizeof(u64), GFP_KERNEL);
+//    if (!ret){
+//        pr_err("cFIFO Allocation Failed (%d)", ret);
+//        return -1;
+//    }
 
     /* Initialize NMI irq_work_queue */
     init_irq_work(&cinfo->read_irq_work, ar_handle_read_overflow);
@@ -572,7 +556,7 @@ static int  setup_cpu_info(const u8 cpu_id){
     enable_event(cinfo->read_event);
 
     /* Start the timer on the specific core*/
-    // smp_call_function_single(cpu_id,__start_timer_on_cpu,cinfo,false);
+    smp_call_function_single(cpu_id,__start_timer_on_cpu,cinfo,false);
 
     pr_info("%s: Exit", __func__ );
     return 0;
@@ -584,19 +568,26 @@ static void deinitialize_cpu_info( const u8 cpu_id){
     struct core_info *cinfo = get_core_info(cpu_id);
     BUG_ON(cinfo == NULL);
 
+    /* As much as possible keep the de-initialization in the reverse sequence of allocation */
+
     //Stop the timer
     hrtimer_cancel(&cinfo->reg_timer);
 
+    //End the throttle thread
     if(cinfo->throttler_thread){
         kthread_stop(cinfo->throttler_thread);
         atomic_set(&cinfo->throttler_task,false);
         cinfo->throttler_thread = NULL;
     }
+    //Free FIFO
+//    kfifo_free(&cinfo->cfifo);
 
-    if (cinfo->read_event){
+    //Free the perf event counter
+    if (cinfo->read_event) {
         disable_event(cinfo->read_event);
         cinfo->read_event= NULL;
     }
+
     pr_info("%s:Exit",__func__ );
 }
 /**************************************************************************************************************************

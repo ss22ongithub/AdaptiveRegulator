@@ -52,16 +52,23 @@ float lms_predict(const float* feat, u8 feat_len){
     return sum;
 }
 
+float avg(const u64 * f , u8 len ){
+    float sum = 0.0;
+    for (u8 i = 0; i < len; i++){
+        sum += f[i];
+    }
+    return (sum/len);
+}
 
-int estimate(const float* f, u8 feat_len) {
+
+u64 estimate(u64* feat, u8 feat_len) {
     char buf[50];
-    float feat[] = {3.14, 6.28, 3.33, 4.44, 5.55};
+//    float feat[] = {3.14, 6.28, 3.33, 4.44, 5.55};
 	kernel_fpu_begin();
-	float x = lms_predict(feat,sizeof(feat)/sizeof(float));
+	float x = avg(feat,feat_len);
     print_float(buf,x);
     kernel_fpu_end();
     trace_printk("%s: %s \n",__func__,buf);
-    return (int)x;
-
+    return (u64)x;
 }
 
