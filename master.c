@@ -72,7 +72,7 @@ static int master_thread_func(void * data) {
                     cinfo->ri = (cinfo->ri == HIST_SIZE)? 0:cinfo->ri;
 
                     u64 e = estimate(cinfo->read_event_hist,
-                                               sizeof(cinfo->read_event_hist));
+                                               sizeof(cinfo->read_event_hist)/sizeof(cinfo->read_event_hist[0]));
                     atomic64_set(&cinfo->budget_est, e);
 
                     trace_printk("CPU(%u): Counter(%llx): New: %llx  Old: %llx estimate: %lld\n",
@@ -84,7 +84,7 @@ static int master_thread_func(void * data) {
                     continue;
             }
         }
-        ssleep(1);
+//        ssleep(1);
     }
 
     pr_info("%s: Exit",__func__);
