@@ -3,6 +3,9 @@
 //#include "eml_trees.h"
 //#include <asm-generic/bug.h>
 
+u64 estimate(u64* feat, u8 feat_len);
+float lms_predict(const u64* feat, u8 feat_len);
+
 #define float_len 10
 
 void print_float(char* buf, float value)
@@ -67,7 +70,7 @@ float avg(const u64 * f , u8 len ){
 
 
 u64 estimate(u64* feat, u8 feat_len) {
-    char buf[50];
+//    char buf[50];
     kernel_fpu_begin();
     float result = lms_predict(feat,feat_len);
     kernel_fpu_end();
@@ -76,7 +79,7 @@ u64 estimate(u64* feat, u8 feat_len) {
     // Convert the float to an integer representation for printk. Preserves 6 decimal places.
     u64 integer_part = (int)result;
     u64 fractional_part = (int)((result - integer_part) * 1000000);
-    pr_debug("estimate= %d.%002d \n", integer_part, fractional_part);
+    pr_debug("estimate= %llu.%llu \n", integer_part, fractional_part);
 //    pr_debug("%s", buf);
 
     return integer_part;

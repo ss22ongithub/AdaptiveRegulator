@@ -35,7 +35,7 @@
 /**************************************************************************
  * Globals
  **************************************************************************/
-static u32 ar_regulation_time_ms = 1000; //ms, default 1000ms
+static u32 ar_regulation_time_ms = 1; //ms, default 1000ms
 static u32 ar_observation_time_ms = 1000;
 static u32 ar_sw_size = 25;  //If changing this change SLIDING_WINDOW_SIZE as well
 static struct dentry *ar_dir = NULL;
