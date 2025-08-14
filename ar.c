@@ -165,7 +165,7 @@ static void __start_timer_on_cpu(void* data)
 static enum hrtimer_restart new_ar_regu_timer_callback(struct hrtimer *timer)
 {
     u8 cpu_id = smp_processor_id();
-    trace_printk("\n");
+//    trace_printk("\n");
 
     struct core_info *cinfo =  get_core_info(cpu_id);
     BUG_ON(!cinfo);
@@ -178,7 +178,7 @@ static enum hrtimer_restart new_ar_regu_timer_callback(struct hrtimer *timer)
 
     u64 read_event_new_budget = atomic64_read(&cinfo->budget_est);
     local64_set(&cinfo->read_event->hw.period_left, read_event_new_budget);
-    trace_printk("New budget: %llu",read_event_new_budget);
+    trace_printk("CPU(%u):New budget: %llu\n",cpu_id,read_event_new_budget);
 
     //unthrottle if the core is in throttle state
     atomic_set(&cinfo->throttler_task,false);
