@@ -7,26 +7,12 @@
  *
  */
 
-
 /**************************************************************************
  * Included Files
  **************************************************************************/
-#include <linux/version.h>
-#include <linux/kernel.h>
-#include <linux/module.h>
-#include <linux/irq_work.h>
-#include <linux/debugfs.h>
-#include <linux/seq_file.h>
-#include <asm/atomic.h>
-#include <linux/uaccess.h>
-#include <linux/printk.h>
-#include <linux/trace_events.h>
-
-/**************************************************************************
- * Included Files
- **************************************************************************/
+#include "kernel_headers.h"
 #include "ar_debugfs.h"
-//#include "ar.h"
+
 
 /**************************************************************************
  * Constants /Macros
@@ -39,9 +25,8 @@
 static u32 ar_regulation_time_ms = 1; //ms, default 1000ms
 static u32 ar_observation_time_ms = 1000;
 static u32 ar_sw_size = 25;  //If changing this change SLIDING_WINDOW_SIZE as well
-atomic_t enable_reg; // Memory regulation enabled or disabled on the fly
+atomic_t enable_reg; // Memory regulation enabled or disabled via debugfs
 static struct dentry *ar_dir = NULL;
-
 
 /****************************************
  * Fops functions for Regulation interval
@@ -74,9 +59,8 @@ static ssize_t ar_reg_interval_write(struct file *filp,
     int ret = kstrtou32(buf, 10, &tmp);
 
     if (ret){
-
         pr_err("%s: ret %d",__func__,ret);
-        return 0;
+        return ret;
     }
 
     ar_regulation_time_ms =  tmp;
@@ -102,7 +86,7 @@ static ssize_t ar_obs_interval_write(struct file *filp,
 
     if (ret){
         pr_err("%s: ret %d",__func__,ret);
-        return 0;
+        return ret;
     }
 
     ar_observation_time_ms =  tmp;
@@ -148,7 +132,7 @@ static ssize_t ar_sw_size_write(struct file *filp,
 
     if (ret){
         pr_err("%s: ret %d",__func__,ret);
-        return 0;
+        return ret;
     }
 
     ar_sw_size = tmp;
@@ -168,12 +152,13 @@ static int ar_sw_size_open(struct inode *inode, struct file *filp)
 {
     return single_open(filp,ar_sw_size_read , NULL);
 }
-/**
- * Fops functions for enable/disable regulation interval
- */
+/******************************************************
+ Fops functions for enable/disable regulation interval
+******************************************************/
 static ssize_t ar_enable_reg_write(struct file *filp,
                                 const char __user *ubuf,size_t cnt, loff_t *ppos){
     char buf[BUF_SIZE];
+    memset(buf,sizeof(buf),0);
     u8 tmp = 0 ;
 
     if (copy_from_user(&buf, ubuf, (cnt > BUF_SIZE) ? BUF_SIZE: cnt) != 0)
@@ -183,13 +168,13 @@ static ssize_t ar_enable_reg_write(struct file *filp,
 
     int ret = kstrtou8(buf, 10, &tmp);
 
-    if (ret){
-        pr_err("%s: Failed to update %d",__func__,ret);
-        return 0;
+    if (ret || (tmp > 1) ){
+        pr_err("%s: Failed to update: Wrong value %u (error:%d)",__func__,tmp,ret);
+        return -EINVAL;
     }
 
     atomic_set(&enable_reg,(tmp?true:false) );
-    pr_info("Regulation Enabled: %s",(tmp?"True":"False"));
+    pr_info("Regulation enabled: %s",(tmp?"True":"False"));
 
 //    struct core_info* cinfo = get_core_info(cpu_id);
 //    BUG_ON(cinfo==NULL);
@@ -256,8 +241,8 @@ int ar_init_debugfs(void)
                 &ar_obs_interval_fops);
     debugfs_create_file("sliding_window_size", 0444, ar_dir, NULL,
             &ar_sliding_window_size);
-    debugfs_create_file("enable", 0444, ar_dir, NULL,
-                        &ar_sliding_window_size);
+    debugfs_create_file("enable_regulation", 0444, ar_dir, NULL,
+                        &ar_enable_reg);
     return 0;
 }
 
