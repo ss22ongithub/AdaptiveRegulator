@@ -56,6 +56,9 @@ struct utilization {
 };
 
 struct core_info *get_core_info(u8 cpu_id);
+void start_regulation(u8 cpu_id);
+void stop_regulation(u8 cpu_id);
+
 
 struct bw_distribution {
   u32 time;

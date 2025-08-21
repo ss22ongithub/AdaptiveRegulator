@@ -142,7 +142,7 @@ static inline void print_current_context(void)
 
 static void __start_timer_on_cpu(void* data)
 {
-    u8 cpu_id = (struct core_info*)data;
+    u8 cpu_id = (u8)data;
     struct core_info* cinfo = get_core_info(cpu_id);
     BUG_ON(!cinfo);
     /* Initialize the regulation timer */
@@ -157,16 +157,6 @@ static void __start_timer_on_cpu(void* data)
                       HRTIMER_MODE_REL_PINNED);
 
 }
-
-//static void __stop_timer_on_cpu(void* data)
-//{
-//    struct core_info* cinfo = (struct core_info*)data;
-//    BUG_ON(!cinfo);
-//    /* Stop the timer*/
-//    hrtimer_cancel(&cinfo->reg_timer);
-//    cinfo->reg_timer.function = NULL;
-//}
-
 
 /**************************************************************************
  * Callbacks and Handlers
@@ -562,11 +552,9 @@ static int  setup_cpu_info(const u8 cpu_id){
     wake_up_process(cinfo->throttler_thread);
 #endif
 
-    /* Enable perf event */
-    enable_event(cinfo->read_event);
+    /***** Regulation to be started by setting
+    /sys/kernel/debug/ar/enable_regulation to 1 ****/
 
-    /* Start the timer on the specific core*/
-    smp_call_function_single(cpu_id,__start_timer_on_cpu,cpu_id,false);
 
     pr_info("%s: Exit", __func__ );
     return 0;
@@ -599,6 +587,31 @@ static void deinitialize_cpu_info( const u8 cpu_id){
     }
 
     pr_info("%s:Exit",__func__ );
+}
+
+void start_regulation(u8 cpu_id){
+    struct core_info* cinfo = get_core_info(cpu_id);
+    BUG_ON(cinfo==NULL);
+
+    /* Enable perf event */
+    enable_event(cinfo->read_event);
+
+    /* Start the timer on the specific core*/
+    smp_call_function_single(cpu_id,__start_timer_on_cpu,(void*)cpu_id,false);
+    pr_info("%s: Exit: (CPU %u)",__func__,cpu_id );
+}
+
+void stop_regulation(u8 cpu_id){
+    struct core_info* cinfo = get_core_info(cpu_id);
+    BUG_ON(cinfo==NULL);
+
+    /* Disable perf event */
+    perf_event_disable(cinfo->read_event);
+
+    /* Stop the timer running on the specific core. Even if the timer
+     is pinned to a core , it can be cancelled from any other core*/
+    hrtimer_cancel(&cinfo->reg_timer);
+    pr_info("%s: Exit: (CPU %u)",__func__,cpu_id );
 }
 /**************************************************************************************************************************
  * Module main

@@ -11,6 +11,7 @@
  * Included Files
  **************************************************************************/
 #include "kernel_headers.h"
+#include "ar.h"
 #include "ar_debugfs.h"
 
 
@@ -156,7 +157,7 @@ static int ar_sw_size_open(struct inode *inode, struct file *filp)
  Fops functions for enable/disable regulation interval
 ******************************************************/
 static ssize_t ar_enable_reg_write(struct file *filp,
-                                const char __user *ubuf,size_t cnt, loff_t *ppos){
+                                const char __user *ubuf,size_t cnt, loff_t *ppos) {
     char buf[BUF_SIZE];
     memset(buf,sizeof(buf),0);
     u8 tmp = 0 ;
@@ -174,16 +175,25 @@ static ssize_t ar_enable_reg_write(struct file *filp,
     }
 
     atomic_set(&enable_reg,(tmp?true:false) );
-    pr_info("Regulation enabled: %s",(tmp?"True":"False"));
 
-//    struct core_info* cinfo = get_core_info(cpu_id);
-//    BUG_ON(cinfo==NULL);
+    u8 cpu_id;
+    for_each_online_cpu(cpu_id){
+        switch(cpu_id){
+            case 1:
+            case 2:
+            case 3:
+            case 4:
+                if (tmp){
+                    start_regulation(cpu_id);
+                }else{
+                    stop_regulation(cpu_id);
+                }
+                break;
+            default: continue;
+        }
+    }
 
-//    if (enable_reg){
-//        smp_call_function_single(1 /*CPU 1*/,__start_timer_on_cpu,NULL,false);
-//    }else{
-//        __stop_timer_on_cpu();
-//    }
+    pr_info("Regulation %s",(tmp?"Enabled":"Disabled"));
     return cnt;
 }
 
