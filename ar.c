@@ -76,7 +76,7 @@ static enum hrtimer_restart new_ar_regu_timer_callback(struct hrtimer *timer);
 static int g_read_counter_id = PMU_LLC_MISS_COUNTER_ID;
 module_param(g_read_counter_id, hexint,  S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
 // static int g_period_us=1000;
-static u64 g_bw_intial_setpoint_mb[MAX_NO_CPUS+1] = {0,1000,1000,1000,1000}; /*Bandwidth setpoints in MB/s */
+static u64 g_bw_intial_setpoint_mb[MAX_NO_CPUS+1] = {0,3000,3000,3000,3000}; /*Bandwidth setpoints in MB/s */
 // static u64 g_bw_max_mb[MAX_NO_CPUS+1] = {0,2000,2000, 2000, 2000}; /*Bandwidth setpoints in MB/s */
 
 
@@ -142,7 +142,8 @@ static inline void print_current_context(void)
 
 static void __start_timer_on_cpu(void* data)
 {
-    struct core_info* cinfo = (struct core_info*)data;
+    u8 cpu_id = (struct core_info*)data;
+    struct core_info* cinfo = get_core_info(cpu_id);
     BUG_ON(!cinfo);
     /* Initialize the regulation timer */
     hrtimer_init(&cinfo->reg_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL_PINNED);
@@ -156,6 +157,15 @@ static void __start_timer_on_cpu(void* data)
                       HRTIMER_MODE_REL_PINNED);
 
 }
+
+//static void __stop_timer_on_cpu(void* data)
+//{
+//    struct core_info* cinfo = (struct core_info*)data;
+//    BUG_ON(!cinfo);
+//    /* Stop the timer*/
+//    hrtimer_cancel(&cinfo->reg_timer);
+//    cinfo->reg_timer.function = NULL;
+//}
 
 
 /**************************************************************************
@@ -176,7 +186,7 @@ static enum hrtimer_restart new_ar_regu_timer_callback(struct hrtimer *timer)
     */
     cinfo->read_event->pmu->stop(cinfo->read_event, PERF_EF_UPDATE);
 
-    u64 read_event_new_budget = atomic64_read(&cinfo->budget_est);
+    u64 read_event_new_budget = atomic64_read(&cinfo->budget_est) + g_bw_intial_setpoint_mb[cpu_id];
     local64_set(&cinfo->read_event->hw.period_left, read_event_new_budget);
     trace_printk("CPU(%u):New budget: %llu\n",cpu_id,read_event_new_budget);
 
@@ -556,7 +566,7 @@ static int  setup_cpu_info(const u8 cpu_id){
     enable_event(cinfo->read_event);
 
     /* Start the timer on the specific core*/
-    smp_call_function_single(cpu_id,__start_timer_on_cpu,cinfo,false);
+    smp_call_function_single(cpu_id,__start_timer_on_cpu,cpu_id,false);
 
     pr_info("%s: Exit", __func__ );
     return 0;
