@@ -67,17 +67,22 @@ static int master_thread_func(void * data) {
 
                     cinfo->g_read_count_old = cinfo->g_read_count_new;
                     cinfo->g_read_count_new = perf_event_count(read_event);
+                    cinfo->g_read_count_used = cinfo->g_read_count_new -
+                                                    cinfo->g_read_count_old;
 
-                    cinfo->read_event_hist[(cinfo->ri)++] = cinfo->g_read_count_new;
+                    cinfo->read_event_hist[(cinfo->ri)++] = cinfo->g_read_count_used;
                     cinfo->ri = (cinfo->ri == HIST_SIZE)? 0:cinfo->ri;
 
                     u64 e = estimate(cinfo->read_event_hist,
                                                sizeof(cinfo->read_event_hist)/sizeof(cinfo->read_event_hist[0]));
                     atomic64_set(&cinfo->budget_est, e);
 
-                    trace_printk("CPU(%u): Counter(%llx): New: %llx  Old: %llx estimate: %lld\n",
-                                 cpu_id,read_event->attr.config,
-                                 cinfo->g_read_count_new,cinfo->g_read_count_old,
+                    trace_printk("CPU(%u):New=%llx Old=%llx used=%llx estimate=%llx\n",
+                                 cpu_id,
+//                                 read_event->attr.config,
+                                 cinfo->g_read_count_new,
+                                 cinfo->g_read_count_old,
+                                 cinfo->g_read_count_used,
                                  e);
                     break;
                 default:
