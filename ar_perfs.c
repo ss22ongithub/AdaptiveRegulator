@@ -104,7 +104,6 @@ void enable_event(struct perf_event *event){
 }
 
 void disable_event(struct perf_event *event){
-
     perf_event_disable(event);
     perf_event_release_kernel(event);
     pr_info("Perf event disabled (%llx)\n", event->attr.config);

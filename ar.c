@@ -75,12 +75,11 @@ static enum hrtimer_restart new_ar_regu_timer_callback(struct hrtimer *timer);
 
 static int g_read_counter_id = PMU_LLC_MISS_COUNTER_ID;
 module_param(g_read_counter_id, hexint,  S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
-// static int g_period_us=1000;
+
 static u64 g_bw_intial_setpoint_mb[MAX_NO_CPUS+1] = {0,3000,3000,3000,3000}; /*Bandwidth setpoints in MB/s */
-// static u64 g_bw_max_mb[MAX_NO_CPUS+1] = {0,2000,2000, 2000, 2000}; /*Bandwidth setpoints in MB/s */
 
 
-static struct utilization u = {0};
+
 
 
 /**************************************************************************
@@ -140,9 +139,9 @@ static inline void print_current_context(void)
              (int)in_nmi(), (int)irqs_disabled());
 }
 
-static void __start_timer_on_cpu(void* data)
+static void __start_timer_on_cpu(void* cpu)
 {
-    u8 cpu_id = (u8)data;
+    u8 cpu_id = (u8)cpu;
     struct core_info* cinfo = get_core_info(cpu_id);
     BUG_ON(!cinfo);
 
@@ -270,134 +269,134 @@ static const s64 Kd_inv = 5;  //Kd=5
 static const s64 Ti = 30;
 static const s64 Td = 20;
 
-static s64 do_pid_control(s64 error){
-
-    
-
-    static s64 sum_of_err=0;
-    
-    // error removed from sum computation
-    s64 error_removed_I = 0;
-    s64 error_removed_D = 0;
-
-#if defined (AREG_USE_FIFO)
-    int ret = kfifo_in(&err_hist_fifo, &error, 1);    
-    if (ret != 1){
-        trace_printk("AREG: err_hist_fifo add Failed\n");
-    }else{
-        trace_printk("AREG: err_hist_fifo added\n");
-    }
-
-    ret = kfifo_in(&err_hist_fifo_D, &error, 1);    
-    if (ret != 1){
-        trace_printk("AREG: err_hist_fifo_D add Failed\n");
-    }else{
-        trace_printk("AREG: err_hist_fifo_D added\n");
-    }
-
-    if (kfifo_len(&err_hist_fifo) > Ti){
-        trace_printk("AREG: err_hist_fifo: len > %lld \n",Ti);
-        ret = kfifo_out(&err_hist_fifo, &error_removed_I, 1);
-        if (ret != 1) {
-            pr_err("ar: err_hist_fifo remove Failed\n");
-        }
-    }
-
-    if (kfifo_len(&err_hist_fifo_D) > Td){
-        trace_printk("AREG: err_hist_fifo_D: len > %lld \n",Ti);
-        ret = kfifo_out(&err_hist_fifo_D, &error_removed_D, 1);
-        if (ret != 1) {
-            pr_err("ar: err_hist_fifo remove Failed\n");
-        }
-    }
-
-#endif
-    /* Time */
-    // ktime_t current_time  = ktime_get();
-
-    /* Proportional term:  P = Kp * error_mb     */
-    s64 P = div64_s64(error,Kp_inv);
-
-    /* Integral term : I  = sigma(error_mb of last  T1 samples) / Ki_inv
-        
-        Initially :sum_p = (e1 + ...+ e_x) / T1
-
-        subsequently new error value = e_y
-        => sum = (e2 + ...+ e_x + e_y) / T1  = (sum_p - t1 + ty)/T1
-           I = sum / K_inv 
-     */
-
-    sum_of_err = sum_of_err + error - error_removed_I;
-    trace_printk("AREG: err=%lld,error_removed_I=%lld\n",error, error_removed_I);
-    s64 I = div64_s64 (sum_of_err,(Ti * Ki_inv));
-
-    // /* Derivative term */
-    // derivative = (error-last_error)/time_diff;
-    // D = Kd * derivative/1000;
-    s64 D = div64_s64( (error - error_removed_D), (Td * Kd_inv) );
-
-    /*TO DO: removed after tuning*/
-    
-    s64 out = P + I + D;
-    trace_printk("AREG:%s: P=%lld I=%lld D=%lld out=%lld\n",__func__, P, I, D,out);
-
-
-    
-    
-    return out;
-}
-
-
-static u32 get_setpoint(void){
-    
-    if(1){
-        return 3000;
-    }
-
-    static u8 sp_idx = 0;
-    static u32 samples = 0;
-    u32 sp = 0 ;
-    const u32 samples_to_wait = 100;
-    if (samples > samples_to_wait){
-        samples = 0;
-        sp_idx++;
-        if ( sp_idx >= MAX_BW_SAMPLES ) {
-            trace_printk("AREG: Error: sp_idx %u > %u. Resetting\n", sp_idx, MAX_BW_SAMPLES);
-            sp_idx = 0;
-        }
-    }
-    samples++;
-//    sp = rd_bw_setpoints[sp_idx].rd_avg_bw;
-    
-    trace_printk("AREG: sp_idx=%u rd_bw_setpoint=%u \n",sp_idx,sp);
-
-    return sp;
-}
+//static s64 do_pid_control(s64 error){
+//
+//
+//
+//    static s64 sum_of_err=0;
+//
+//    // error removed from sum computation
+//    s64 error_removed_I = 0;
+//    s64 error_removed_D = 0;
+//
+//#if defined (AREG_USE_FIFO)
+//    int ret = kfifo_in(&err_hist_fifo, &error, 1);
+//    if (ret != 1){
+//        trace_printk("AREG: err_hist_fifo add Failed\n");
+//    }else{
+//        trace_printk("AREG: err_hist_fifo added\n");
+//    }
+//
+//    ret = kfifo_in(&err_hist_fifo_D, &error, 1);
+//    if (ret != 1){
+//        trace_printk("AREG: err_hist_fifo_D add Failed\n");
+//    }else{
+//        trace_printk("AREG: err_hist_fifo_D added\n");
+//    }
+//
+//    if (kfifo_len(&err_hist_fifo) > Ti){
+//        trace_printk("AREG: err_hist_fifo: len > %lld \n",Ti);
+//        ret = kfifo_out(&err_hist_fifo, &error_removed_I, 1);
+//        if (ret != 1) {
+//            pr_err("ar: err_hist_fifo remove Failed\n");
+//        }
+//    }
+//
+//    if (kfifo_len(&err_hist_fifo_D) > Td){
+//        trace_printk("AREG: err_hist_fifo_D: len > %lld \n",Ti);
+//        ret = kfifo_out(&err_hist_fifo_D, &error_removed_D, 1);
+//        if (ret != 1) {
+//            pr_err("ar: err_hist_fifo remove Failed\n");
+//        }
+//    }
+//
+//#endif
+//    /* Time */
+//    // ktime_t current_time  = ktime_get();
+//
+//    /* Proportional term:  P = Kp * error_mb     */
+//    s64 P = div64_s64(error,Kp_inv);
+//
+//    /* Integral term : I  = sigma(error_mb of last  T1 samples) / Ki_inv
+//
+//        Initially :sum_p = (e1 + ...+ e_x) / T1
+//
+//        subsequently new error value = e_y
+//        => sum = (e2 + ...+ e_x + e_y) / T1  = (sum_p - t1 + ty)/T1
+//           I = sum / K_inv
+//     */
+//
+//    sum_of_err = sum_of_err + error - error_removed_I;
+//    trace_printk("AREG: err=%lld,error_removed_I=%lld\n",error, error_removed_I);
+//    s64 I = div64_s64 (sum_of_err,(Ti * Ki_inv));
+//
+//    // /* Derivative term */
+//    // derivative = (error-last_error)/time_diff;
+//    // D = Kd * derivative/1000;
+//    s64 D = div64_s64( (error - error_removed_D), (Td * Kd_inv) );
+//
+//    /*TO DO: removed after tuning*/
+//
+//    s64 out = P + I + D;
+//    trace_printk("AREG:%s: P=%lld I=%lld D=%lld out=%lld\n",__func__, P, I, D,out);
+//
+//
+//
+//
+//    return out;
+//}
 
 
-static void update_stats(u64 cur_used_bw_mb){
-    trace_printk("AREG: %s\n",__func__);
-    u8 ar_sw_size = get_sliding_window_size();
+//static u32 get_setpoint(void){
+//
+//    if(1){
+//        return 3000;
+//    }
+//
+//    static u8 sp_idx = 0;
+//    static u32 samples = 0;
+//    u32 sp = 0 ;
+//    const u32 samples_to_wait = 100;
+//    if (samples > samples_to_wait){
+//        samples = 0;
+//        sp_idx++;
+//        if ( sp_idx >= MAX_BW_SAMPLES ) {
+//            trace_printk("AREG: Error: sp_idx %u > %u. Resetting\n", sp_idx, MAX_BW_SAMPLES);
+//            sp_idx = 0;
+//        }
+//    }
+//    samples++;
+////    sp = rd_bw_setpoints[sp_idx].rd_avg_bw;
+//
+//    trace_printk("AREG: sp_idx=%u rd_bw_setpoint=%u \n",sp_idx,sp);
+//
+//    return sp;
+//}
 
-    u.used_bw_mb_list[u.used_bw_idx++] = cur_used_bw_mb;
-    if (u.used_bw_idx >= ar_sw_size){
-        u.used_bw_idx = 0;
-    }
 
-    /* Calculate sliding window average of used bandwdths */
-    u64 tmp_avg = 0;
-    for(u8 i=0 ; i < ar_sw_size; i++){
-        tmp_avg += u.used_bw_mb_list[i];
-    }
-    u.used_avg_bw_mb = div64_u64(tmp_avg,ar_sw_size);
-}
+//static void update_stats(u64 cur_used_bw_mb){
+//    trace_printk("AREG: %s\n",__func__);
+//    u8 ar_sw_size = get_sliding_window_size();
+//
+//    u.used_bw_mb_list[u.used_bw_idx++] = cur_used_bw_mb;
+//    if (u.used_bw_idx >= ar_sw_size){
+//        u.used_bw_idx = 0;
+//    }
+//
+//    /* Calculate sliding window average of used bandwdths */
+//    u64 tmp_avg = 0;
+//    for(u8 i=0 ; i < ar_sw_size; i++){
+//        tmp_avg += u.used_bw_mb_list[i];
+//    }
+//    u.used_avg_bw_mb = div64_u64(tmp_avg,ar_sw_size);
+//}
 
 
-static enum hrtimer_restart ar_regu_timer_callback(struct hrtimer *timer)
-{
-	u8 cpu_id = smp_processor_id();
-    struct core_info *cinfo =  get_core_info(cpu_id);
-    trace_printk("CPU(%d): %s\n", cinfo->cpu_id,__func__);
+//static enum hrtimer_restart ar_regu_timer_callback(struct hrtimer *timer)
+//{
+//	u8 cpu_id = smp_processor_id();
+//    struct core_info *cinfo =  get_core_info(cpu_id);
+//    trace_printk("CPU(%d): %s\n", cinfo->cpu_id,__func__);
 
     /* 
        Stop the counter and determine the used count in 
@@ -481,8 +480,8 @@ static enum hrtimer_restart ar_regu_timer_callback(struct hrtimer *timer)
 
     /*Re-enabled the counter*/
     // cinfo->read_event->pmu->start(read_event, PERF_EF_RELOAD);
-    return HRTIMER_NORESTART;
-}
+//    return HRTIMER_NORESTART;
+//}
 
 
 static int  setup_cpu_info(const u8 cpu_id){

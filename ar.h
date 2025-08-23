@@ -11,7 +11,8 @@ struct core_info {
   u64 g_read_count_old;
   u64 g_read_count_used;
 
-  // History of counter values (Event: Read misses)
+  // History of count of LLC read misses occurred between the regulation intervals.
+  // (Event: Read misses)
   u64 read_event_hist[HIST_SIZE];
   u8 ri;
 
@@ -44,6 +45,11 @@ struct core_info {
   // Memory Bandwidth Budget estimate for the core.
   // Computed by master core
   atomic64_t budget_est;
+  /* Each core has an array of weights to generate the prediction */
+  double weight_matrix [HIST_SIZE];
+  u64 next_estimate;
+  u64 prev_estimate;
+
 };
 
 struct utilization {
