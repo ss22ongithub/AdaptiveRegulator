@@ -90,6 +90,7 @@ static int master_thread_func(void * data) {
             }
         }
         usleep_range(500,500);
+//          ssleep(1);
     }
 
     pr_info("%s: Exit",__func__);

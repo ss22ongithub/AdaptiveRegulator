@@ -1,10 +1,9 @@
 #include "kernel_headers.h"
-#include "time_series_model.h"
-//#include "eml_trees.h"
-//#include <asm-generic/bug.h>
-
+/** Function Prototypes **/
 u64 estimate(u64* feat, u8 feat_len);
 float lms_predict(const u64* feat, u8 feat_len);
+void print_float(char* buf, float value);
+float avg(const u64 * f , u8 len );
 
 #define float_len 10
 
@@ -84,23 +83,4 @@ u64 estimate(u64* feat, u8 feat_len) {
 
     return integer_part;
 }
-
-//u64 sample_estimate(u64* feat, u8 feat_len) {
-//    char buf[50];
-//    float feat2[] = {1.123, 2.123, 3.123, 4.123, 5.123};
-//    feat_len = sizeof(feat2)/sizeof(float);
-//    kernel_fpu_begin();
-//    float result = avg(feat2,feat_len);
-//    kernel_fpu_end();
-//    print_float(buf,result);
-//
-//    // Convert the float to an integer representation for printk
-//    // This example preserves 2 decimal places.
-//    u64 integer_part = (int)result;
-//    u64 fractional_part = (int)((result - integer_part) * 100000);
-//    pr_info("estimate = %d.%002d \n", integer_part, fractional_part);
-//    pr_info("%s", buf);
-//
-//    return (u64)integer_part;
-//}
 
