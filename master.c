@@ -76,19 +76,18 @@ static int master_thread_func(void * data) {
                                                sizeof(cinfo->read_event_hist)/sizeof(cinfo->read_event_hist[0]));
                     atomic64_set(&cinfo->budget_est, e);
 
-                    trace_printk("CPU(%u):New=%llx Old=%llx used=%llx estimate=%llx\n",
-                                 cpu_id,
-                                 cinfo->g_read_count_new,
-                                 cinfo->g_read_count_old,
-                                 cinfo->g_read_count_used,
-                                 e);
+                   trace_printk("CPU(%u):New=%llx Old=%llx used=%llx estimate=%llx\n",
+                                cpu_id,
+                                cinfo->g_read_count_new,
+                                cinfo->g_read_count_old,
+                                cinfo->g_read_count_used,
+                                e);
                     break;
                 default:
                     continue;
             }
         }
         usleep_range(500,500);
-//          ssleep(1);
     }
 
     pr_info("%s: Exit",__func__);
@@ -110,9 +109,9 @@ void initialize_master(void){
 }
 
 void deinitialize_master(void){
-
     if (mthread){
         kthread_stop(mthread);
         mthread = NULL;
     }
+    pr_info("%s: Exit!",__func__ );
 }

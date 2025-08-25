@@ -262,7 +262,6 @@ int ar_init_debugfs(void)
 }
 
 void inline ar_remove_debugfs(void){
-
     debugfs_remove_recursive(ar_dir);
 }
 
