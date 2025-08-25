@@ -145,12 +145,7 @@ static void __start_timer_on_cpu(void* data)
     u8 cpu_id = (u8)data;
     struct core_info* cinfo = get_core_info(cpu_id);
     BUG_ON(!cinfo);
-    /* Initialize the regulation timer */
-    hrtimer_init(&cinfo->reg_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL_PINNED);
-    
-    /* initialize timer */
-        hrtimer_init(&cinfo->reg_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL_PINNED);
-        cinfo->reg_timer.function = &new_ar_regu_timer_callback;
+
 
     /* start timer */
         hrtimer_start(&cinfo->reg_timer, ms_to_ktime(get_regulation_time()),
@@ -552,9 +547,12 @@ static int  setup_cpu_info(const u8 cpu_id){
     wake_up_process(cinfo->throttler_thread);
 #endif
 
+    /* Initialize the regulation timer. However the timer will be started using @ __start_timer() */
+    hrtimer_init(&cinfo->reg_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL_PINNED);
+    cinfo->reg_timer.function = &new_ar_regu_timer_callback;
+
     /***** Regulation to be started by setting
     /sys/kernel/debug/ar/enable_regulation to 1 ****/
-
 
     pr_info("%s: Exit", __func__ );
     return 0;
@@ -563,29 +561,32 @@ static int  setup_cpu_info(const u8 cpu_id){
 static void deinitialize_cpu_info( const u8 cpu_id){
 
     pr_info("%s:Enter CPU (%d)",__func__, cpu_id );
+    
     struct core_info *cinfo = get_core_info(cpu_id);
+    
     BUG_ON(cinfo == NULL);
-
-    /* As much as possible keep the de-initialization in the reverse sequence of allocation */
-
-    //Stop the timer
+        
+    /* As much as possible keep the de-initialization in the reverse sequence of initialization
+     * Refer: setup_cpu_info()
+     * */
+    
+    // Stop the timer. 
+    // WARNING: Ensure timer is intialized before cancelling
+    
     hrtimer_cancel(&cinfo->reg_timer);
-
+    
     //End the throttle thread
     if(cinfo->throttler_thread){
         kthread_stop(cinfo->throttler_thread);
         atomic_set(&cinfo->throttler_task,false);
         cinfo->throttler_thread = NULL;
     }
-    //Free FIFO
-//    kfifo_free(&cinfo->cfifo);
-
+    
     //Free the perf event counter
     if (cinfo->read_event) {
         disable_event(cinfo->read_event);
         cinfo->read_event= NULL;
     }
-
     pr_info("%s:Exit",__func__ );
 }
 
@@ -673,22 +674,18 @@ static int __init ar_init (void ){
 
 static void __exit ar_exit( void )
 {
-#if defined (AREG_USE_FIFO)
-
-//    kfifo_free(&err_hist_fifo);
-//    pr_info("ar: KFIFO err_hist_fifo freed");
-#endif
-    /* Keep the deinitializing sequence reverse of the allocation sequence in __init function */
-
+    /* Keep the deinitializing sequence reverse of the allocation sequence seen in  __init function */
 
     ar_remove_debugfs();
-    pr_err("Remove DebugFS Done!");
+    
     deinitialize_master();
-    pr_err("deinitialize_master() Done!");
-
+    
     deinitialize_cpu_info((u8)1);
+    
     deinitialize_cpu_info((u8)2);
+    
     deinitialize_cpu_info((u8)3);
+    
     deinitialize_cpu_info((u8)4);
 
     pr_info("Module removed\n");
