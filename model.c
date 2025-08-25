@@ -1,4 +1,7 @@
 #include "kernel_headers.h"
+#include "time_series_model.h"
+
+
 /** Function Prototypes **/
 u64 estimate(u64* feat, u8 feat_len);
 float lms_predict(const u64* feat, u8 feat_len);

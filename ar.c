@@ -680,9 +680,11 @@ static void __exit ar_exit( void )
 #endif
     /* Keep the deinitializing sequence reverse of the allocation sequence in __init function */
 
-    ar_remove_debugfs();
 
+    ar_remove_debugfs();
+    pr_err("Remove DebugFS Done!");
     deinitialize_master();
+    pr_err("deinitialize_master() Done!");
 
     deinitialize_cpu_info((u8)1);
     deinitialize_cpu_info((u8)2);

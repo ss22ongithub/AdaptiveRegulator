@@ -15,7 +15,6 @@ extern u64 estimate(u64* f, u8 feat_len);
 /* WARNING: This function should be kept strictly re-entrant */
 static void throttle( u8 cpu_id)
 {
-
     if (cpu_id == 0){
         pr_err("%s: cpu_id cannot be 0!",__func__);
         return;
@@ -79,7 +78,6 @@ static int master_thread_func(void * data) {
 
                     trace_printk("CPU(%u):New=%llx Old=%llx used=%llx estimate=%llx\n",
                                  cpu_id,
-//                                 read_event->attr.config,
                                  cinfo->g_read_count_new,
                                  cinfo->g_read_count_old,
                                  cinfo->g_read_count_used,

@@ -160,21 +160,26 @@ static ssize_t ar_enable_reg_write(struct file *filp,
                                 const char __user *ubuf,size_t cnt, loff_t *ppos) {
     char buf[BUF_SIZE];
     memset(buf,sizeof(buf),0);
-    u8 tmp = 0 ;
+    u8 user_value = false ;
 
     if (copy_from_user(&buf, ubuf, (cnt > BUF_SIZE) ? BUF_SIZE: cnt) != 0)
     return 0;
 
     pr_info("%s: Received %s",__func__,buf);
 
-    int ret = kstrtou8(buf, 10, &tmp);
+    int ret = kstrtou8(buf, 10, &user_value);
 
-    if (ret || (tmp > 1) ){
-        pr_err("%s: Failed to update: Wrong value %u (error:%d)",__func__,tmp,ret);
+    if (ret || (user_value > 1) ){
+        pr_err("%s: Failed to update: Wrong value %u (error:%d)",__func__,user_value,ret);
         return -EINVAL;
     }
 
-    atomic_set(&enable_reg,(tmp?true:false) );
+    if ( atomic_read(&enable_reg) == user_value ){
+        pr_info("Regulation %s",(user_value?"Enabled":"Disabled"));
+        return cnt;
+    }
+
+    atomic_set(&enable_reg,(user_value?true:false) );
 
     u8 cpu_id;
     for_each_online_cpu(cpu_id){
@@ -183,7 +188,7 @@ static ssize_t ar_enable_reg_write(struct file *filp,
             case 2:
             case 3:
             case 4:
-                if (tmp){
+                if (user_value){
                     start_regulation(cpu_id);
                 }else{
                     stop_regulation(cpu_id);
@@ -193,7 +198,7 @@ static ssize_t ar_enable_reg_write(struct file *filp,
         }
     }
 
-    pr_info("Regulation %s",(tmp?"Enabled":"Disabled"));
+    pr_info("Regulation %s",(user_value?"Enabled":"Disabled"));
     return cnt;
 }
 
