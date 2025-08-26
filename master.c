@@ -51,7 +51,7 @@ static int master_thread_func(void * data) {
 
     while (!kthread_should_stop() ) {
         u8 cpu_id;
-        trace_printk("Master thread looping\n");
+//        trace_printk("Master thread looping\n");
         if (kthread_should_stop()){
         	pr_info("Stopping thread %s\n",__func__);
             break;
@@ -63,6 +63,9 @@ static int master_thread_func(void * data) {
                 case 3:
                 case 4:
                     struct core_info* cinfo = get_core_info(cpu_id);
+                    WARN_ON(cinfo == NULL);
+                    WARN_ON(cinfo->read_event == NULL);
+
                     struct perf_event* read_event = cinfo->read_event;
 
                     cinfo->g_read_count_old = cinfo->g_read_count_new;
@@ -79,14 +82,13 @@ static int master_thread_func(void * data) {
 //                        continue;
 //                    }
                     s64 error = cinfo->g_read_count_used - cinfo->prev_estimate;
-//                  update_weight_matrix(error,cinfo);
+                    update_weight_matrix(error,cinfo);
 
 
                     (cinfo->ri)++;
                     cinfo->ri = (cinfo->ri == HIST_SIZE)? 0:cinfo->ri;
                     trace_printk("CPU(%u):New=%llx Old=%llx used=%llx estimate=%llx err=%lld\n",
                                  cpu_id,
-//                                 read_event->attr.config,
                                  cinfo->g_read_count_new,
                                  cinfo->g_read_count_old,
                                  cinfo->g_read_count_used,

@@ -1,8 +1,5 @@
 #include "kernel_headers.h"
-#include "time_series_model.h"
-//#include "eml_trees.h"
-//#include <asm-generic/bug.h>
-
+#include "ar.h"
 
 
 /** Function Prototypes **/
@@ -76,7 +73,7 @@ float avg(const u64 * f , u8 len ){
 
 
 u64 estimate(u64* feat, u8 feat_len) {
-//    char buf[50];
+//    char buf[256];
     kernel_fpu_begin();
     float result = lms_predict(feat,feat_len);
     kernel_fpu_end();
@@ -99,17 +96,21 @@ static u64 l2_norm(u64* feature, u8 feat_len){
     return norm;
 }
 void update_weight_matrix(u64 error, struct core_info *cinfo ){
+    
+    u64 norm = l2_norm(cinfo->read_event_hist, HIST_SIZE);
+    if ( 0 == norm){
+        trace_printk("Norm=0, skipping wieght update\n");
+        return;
+    }
     kernel_fpu_begin();
     const float lrate = 0.5;
-    u64 norm = l2_norm(cinfo->read_event_hist, HIST_SIZE);
-
-
-    float normalized_count[HIST_SIZE] = {0.0f};
+    float normalized_count[HIST_SIZE] = {0};
     for (u8 i = 0; i <HIST_SIZE ; ++i) {
         normalized_count[i] = cinfo->read_event_hist[i] / norm;
         cinfo->weight_matrix[i] = cinfo->weight_matrix[i] + (error * lrate * normalized_count[i]);
     }
     kernel_fpu_end();
+    trace_printk("Exit");
 }
 
 
