@@ -10,7 +10,7 @@ static void throttle( u8 cpu_id) __attribute__((unused));
 static void unthrottle( u8 cpu_id) __attribute__((unused));
 
 /* External Functions */
-extern u64 estimate(u64* f, u8 feat_len);
+u64 estimate(u64* feat, u8 feat_len, float *wm, u8 wm_len, u8 index);
 extern void update_weight_matrix(u64 error, struct core_info *cinfo );
 
 /* WARNING: This function should be kept strictly re-entrant */
@@ -74,8 +74,12 @@ static int master_thread_func(void * data) {
                                                     cinfo->g_read_count_old;
 
                     cinfo->read_event_hist[cinfo->ri] = cinfo->g_read_count_used;
-                    cinfo->next_estimate = estimate(cinfo->read_event_hist,
-                                               sizeof(cinfo->read_event_hist)/sizeof(cinfo->read_event_hist[0]));
+                    cinfo->next_estimate = estimate( cinfo->read_event_hist,
+                                                     sizeof(cinfo->read_event_hist)/sizeof(cinfo->read_event_hist[0]),
+                                                     cinfo->weight_matrix,
+                                                     sizeof(cinfo->weight_matrix)/sizeof(cinfo->weight_matrix[0]),
+                                                     cinfo->ri);
+
                     atomic64_set(&cinfo->budget_est, cinfo->next_estimate);
 //                    if(!cinfo->prev_estimate){
 //                        cinfo->prev_estimate=cinfo->next_estimate;
@@ -87,13 +91,18 @@ static int master_thread_func(void * data) {
 
                     (cinfo->ri)++;
                     cinfo->ri = (cinfo->ri == HIST_SIZE)? 0:cinfo->ri;
-                    trace_printk("CPU(%u):New=%llx Old=%llx used=%llx estimate=%llx err=%lld\n",
+                    trace_printk("CPU(%u):Used=%llu nxt_est=%lld err=%lld\n",
                                  cpu_id,
-                                 cinfo->g_read_count_new,
-                                 cinfo->g_read_count_old,
                                  cinfo->g_read_count_used,
                                  cinfo->next_estimate,
                                  error);
+                    // trace_printk("CPU(%u):New=%llx Old=%llx used=%llx estimate=%llx err=%lld\n",
+                    //              cpu_id,
+                    //              cinfo->g_read_count_new,
+                    //              cinfo->g_read_count_old,
+                    //              cinfo->g_read_count_used,
+                    //              cinfo->next_estimate,
+                    //              error);
                     /* Store the estimate for next iteration */
                     cinfo->prev_estimate=cinfo->next_estimate;
                     break;
@@ -101,8 +110,9 @@ static int master_thread_func(void * data) {
                     continue;
             }
         }
-//        usleep_range(500,500);
-          ssleep(1);
+       // usleep_range(500,500);
+        msleep(1000);
+          
     }
 
     pr_info("%s: Exit",__func__);

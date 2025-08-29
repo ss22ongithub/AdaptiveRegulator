@@ -3,7 +3,7 @@
 
 // TODO: CHANGE AR_SW_SIZE IN AR_DEBUGFS.C AS WELL
 #define SLIDING_WINDOW_SIZE 25
-#define HIST_SIZE 4
+#define HIST_SIZE 5
 
 /* Each CPU core's info */
 struct core_info {
@@ -46,9 +46,9 @@ struct core_info {
   // Computed by master core
   atomic64_t budget_est;
   /* Each core has an array of weights to generate the prediction */
-  double weight_matrix [HIST_SIZE];
-  u64 next_estimate;
-  u64 prev_estimate;
+  float weight_matrix [HIST_SIZE];
+  s64 next_estimate;
+  s64 prev_estimate;
 
 };
 

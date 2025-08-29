@@ -59,7 +59,7 @@ static DECLARE_KFIFO_PTR(err_hist_fifo_D, s64);
 
 
 /**************************************************************************
- * Function Declarations 
+ * Local Function Declarations
  **************************************************************************/
 
 static void deinitialize_cpu_info(const u8 cpu_id);
@@ -67,7 +67,11 @@ static int  setup_cpu_info(const u8 cpu_id);
 static void ar_handle_read_overflow(struct irq_work *entry);
 static enum hrtimer_restart new_ar_regu_timer_callback(struct hrtimer *timer);
 
-
+/**************************************************************************
+ * External Function Declarations
+ **************************************************************************/
+/* Model */
+extern void init_weight_matrix(struct core_info *cinfo);
 
 /**************************************************************************
  * Global Variables
@@ -174,7 +178,7 @@ static enum hrtimer_restart new_ar_regu_timer_callback(struct hrtimer *timer)
     local64_set(&cinfo->read_event->hw.period_left, read_event_new_budget);
     trace_printk("CPU(%u):New budget: %llu\n",cpu_id,read_event_new_budget);
 
-    //unthrottle if the core is in throttle state
+    //un-throttle if the core is in throttle state
     atomic_set(&cinfo->throttler_task,false);
 
     hrtimer_forward_now(timer, ms_to_ktime(get_regulation_time()));
@@ -552,6 +556,9 @@ static int  setup_cpu_info(const u8 cpu_id){
 
     /***** Regulation to be started by setting
     /sys/kernel/debug/ar/enable_regulation to 1 ****/
+
+    /* Initiialize weight matrix to predefined values */
+    init_weight_matrix(cinfo);
 
     pr_info("%s: Exit", __func__ );
     return 0;
