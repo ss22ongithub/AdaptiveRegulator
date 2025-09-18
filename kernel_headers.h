@@ -33,6 +33,7 @@
 #include <linux/init.h>
 #include <linux/hw_breakpoint.h>
 #include <linux/kstrtox.h>
+#include <linux/math64.h>
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(5, 0, 0)
 #  include <uapi/linux/sched/types.h>

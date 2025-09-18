@@ -3,6 +3,8 @@
 #include "ar.h"
 #include "ar_perfs.h"
 
+
+
 static struct task_struct* mthread = NULL;
 
 /* Unused functions*/
@@ -10,8 +12,32 @@ static void throttle( u8 cpu_id) __attribute__((unused));
 static void unthrottle( u8 cpu_id) __attribute__((unused));
 
 /* External Functions */
-u64 estimate(u64* feat, u8 feat_len, float *wm, u8 wm_len, u8 index);
-extern void update_weight_matrix(u64 error, struct core_info *cinfo );
+extern u64 estimate(u64* feat, u8 feat_len, float *wm, u8 wm_len, u8 index);
+extern void update_weight_matrix(s64 error,struct core_info* cinfo );
+extern u32  get_regulation_time(void);
+
+/* Inline function */
+/** convert MB/s to #of events (i.e., LLC miss counts) per 1ms */
+static inline u64 convert_mb_to_events(int mb)
+{
+    return div64_u64((u64)mb*1024*1024,
+             CACHE_LINE_SIZE * (1000/get_regulation_time()));
+}
+
+/* Convert # of events to MB/s */
+static inline u64 convert_events_to_mb(u64 events)
+{
+    /*
+     * BW  = (event * CACHE_LINE_SIZE)/ time_in_ms  - bytes/ms 
+     *     =  (event * CACHE )/ (time_in_ms * 1024 *1024)  = mb/ms
+     *     =  (event * CACHE * 1000 )/ (time_in_sec * 1024 *1024)  = mb/s
+     */ 
+    int divisor = get_regulation_time()*1024*1024;
+    int mb = div64_u64(events*CACHE_LINE_SIZE*1000 + (divisor-1), divisor);
+    return mb;
+}
+
+
 
 /* WARNING: This function should be kept strictly re-entrant */
 static void throttle( u8 cpu_id)
@@ -69,7 +95,7 @@ static int master_thread_func(void * data) {
                     struct perf_event* read_event = cinfo->read_event;
 
                     cinfo->g_read_count_old = cinfo->g_read_count_new;
-                    cinfo->g_read_count_new = perf_event_count(read_event);
+                    cinfo->g_read_count_new = convert_events_to_mb( perf_event_count(read_event)) ;
                     cinfo->g_read_count_used = cinfo->g_read_count_new -
                                                     cinfo->g_read_count_old;
 
@@ -79,8 +105,7 @@ static int master_thread_func(void * data) {
                                                      cinfo->weight_matrix,
                                                      sizeof(cinfo->weight_matrix)/sizeof(cinfo->weight_matrix[0]),
                                                      cinfo->ri);
-
-                    atomic64_set(&cinfo->budget_est, cinfo->next_estimate);
+                    atomic64_set(&cinfo->budget_est, convert_mb_to_events(cinfo->next_estimate));
 //                    if(!cinfo->prev_estimate){
 //                        cinfo->prev_estimate=cinfo->next_estimate;
 //                        continue;
@@ -96,22 +121,14 @@ static int master_thread_func(void * data) {
                                  cinfo->g_read_count_used,
                                  cinfo->next_estimate,
                                  error);
-                    // trace_printk("CPU(%u):New=%llx Old=%llx used=%llx estimate=%llx err=%lld\n",
-                    //              cpu_id,
-                    //              cinfo->g_read_count_new,
-                    //              cinfo->g_read_count_old,
-                    //              cinfo->g_read_count_used,
-                    //              cinfo->next_estimate,
-                    //              error);
-                    /* Store the estimate for next iteration */
                     cinfo->prev_estimate=cinfo->next_estimate;
                     break;
                 default:
                     continue;
             }
         }
-       // usleep_range(500,500);
-        msleep(1000);
+       // usleep_range(100,100);
+       msleep(1);
           
     }
 

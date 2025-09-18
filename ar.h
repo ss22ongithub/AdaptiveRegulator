@@ -4,6 +4,7 @@
 // TODO: CHANGE AR_SW_SIZE IN AR_DEBUGFS.C AS WELL
 #define SLIDING_WINDOW_SIZE 25
 #define HIST_SIZE 5
+#define CACHE_LINE_SIZE 64
 
 /* Each CPU core's info */
 struct core_info {

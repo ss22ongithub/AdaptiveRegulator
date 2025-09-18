@@ -5,7 +5,7 @@
 /** Function Prototypes **/
 u64 estimate(u64* feat, u8 feat_len, float *wm, u8 wm_len, u8 index);
 float lms_predict(const u64* feat, u8 feat_len,float *wm, u8 wm_len, u8 ri);
-void update_weight_matrix(u64 error, struct core_info *cinfo );
+void update_weight_matrix(s64 error, struct core_info *cinfo );
 void print_float(char* buf, float value);
 float avg(const u64 * f , u8 len );
 void init_weight_matrix(struct core_info *cinfo);
@@ -78,52 +78,77 @@ float avg(const u64 * f , u8 len ){
 
 
 u64 estimate(u64* feat, u8 feat_len, float *wm, u8 wm_len, u8 index) {
-
     kernel_fpu_begin();
-    float result = lms_predict(feat,feat_len,wm , wm_len, index);
+    // float result = lms_predict(feat,feat_len,wm , wm_len, index);
+    float result = lms_predict(feat,feat_len, wm ,  wm_len, index);
     // Convert the float to an integer representation for printk. Preserves 6 decimal places.
-    u64 integer_part = (int)result;
-    u64 fractional_part = (int)((result - integer_part) * 1000000);
     kernel_fpu_end();
-//    trace_printk(" %llu.%llu \n", integer_part, fractional_part);
-
+    u64 integer_part = (int)result;
+    // u64 fractional_part = (int)((result - integer_part) * 1000000);
+    // trace_printk(" %llu.%llu \n", integer_part, fractional_part);
     return integer_part;
 }
 
-    static u64 l2_norm(u64* feature, u8 feat_len){
+static u64 l2_norm(u64* feature, u8 feat_len){
     u64 norm_sq = 0;
     for (u8 i = 0; i < feat_len; ++i) {
-        norm_sq += feature[i] * feature[i] ;
+//        norm_sq += feature[i] * feature[i] ;0
+        norm_sq += mul_u64_u64_shr(feature[i],feature[i], 16) ;
     }
     return norm_sq;
 }
 
-void update_weight_matrix(u64 error, struct core_info *cinfo ){
+void 
+update_weight_matrix(s64 error,struct core_info* cinfo ){
     
-    char buf[HIST_SIZE][51];
-    char buf2[HIST_SIZE][51];
+    // Avoid Divide by zero error
     u64 norm_sq = l2_norm(cinfo->read_event_hist, HIST_SIZE);
     if ( 0 == norm_sq){
-//        trace_printk("Norm Square=0, skipping weight update\n");
+        // trace_printk("CPU(%d): Norm Square=0, skipping weight update\n", cinfo->cpu_id);
         return;
     }
+    // sign_bit: 1 = +ve , -1 = -ve. Convert error to a +ve value
+    const s8 sign_bit = (error < 0)?-1:1;
+    error = error * sign_bit;
+    // At this point error is always +ve
+
+    const float  lrate = 0.000005;
+    float  product[HIST_SIZE] = {0};
+
     kernel_fpu_begin();
-    const float lrate = 0.005;
-    float product[HIST_SIZE] = {0};
     for (u8 i = 0; i <HIST_SIZE ; ++i) {
-        product[i] = error * lrate * cinfo->read_event_hist[i];
-        cinfo->weight_matrix[i] = cinfo->weight_matrix[i] + (product[i]);//(product[i]/norm_sq);
+        u64 t1 = mul_u64_u64_shr(error,cinfo->read_event_hist[i],0);
+        float  t2 = t1 / norm_sq;
+        product[i] = t2 * lrate;
+        // Sign bit is used while updating the weight vector
+        cinfo->weight_matrix[i] = cinfo->weight_matrix[i] + (sign_bit * product[i]);
     }
     kernel_fpu_end();
+    
+
+    char buf[HIST_SIZE][51]={0};
+    char buf2[HIST_SIZE][51]={0};
     for (u8 i = 0; i < HIST_SIZE; i++){
         print_float(buf[i],cinfo->weight_matrix[i]);
-//        print_float(buf2[i],product[i]);
+        // print_float(buf2[i],product[i]);
     }
-    trace_printk("Weights( %s %s %s %s %s) | error=%lld | norm_sq=%llu\n",
-        buf[0],buf[1],buf[2],buf[3], buf[4],
-        error, norm_sq);
-//    trace_printk("Product term ( %s %s %s %s %s) \n",
-//                 buf2[0],buf2[1],buf2[2],buf2[3], buf2[4]);
+
+    trace_printk("\n CPU(%u) | Weights ( %s %s %s %s %s) \n",
+                 cinfo->cpu_id,
+                 buf[0],buf[1],buf[2],buf[3], buf[4]);
+#if 0
+    // trace_printk("\n CPU(%u)| read_event_hist( %llu, %llu, %llu, %llu, %llu)|ri=%u |\n error=%lld | norm_sq=%llu\n",
+    //     cinfo->cpu_id,
+    //     cinfo->read_event_hist[0],cinfo->read_event_hist[1],cinfo->read_event_hist[2],
+    //     cinfo->read_event_hist[3],cinfo->read_event_hist[4],
+    //     cinfo->ri,
+    //     error, norm_sq);
+    
+    // trace_printk("\n CPU(%u) | Product term ( %s %s %s %s %s) \n",
+    //              cinfo->cpu_id,
+    //              buf2[0],buf2[1],buf2[2],buf2[3], buf2[4]);
+	//
+#endif
 
 }
 

@@ -34,7 +34,7 @@ static DECLARE_KFIFO_PTR(err_hist_fifo_D, s64);
 /**************************************************************************
  * Public Definitions
  **************************************************************************/
-#define CACHE_LINE_SIZE 64
+
 #define TIMEOUT_NSEC ( 1000000000L )
 #define TIMEOUT_SEC  ( 5 )
 #define MAX_NO_CPUS 4
@@ -72,6 +72,7 @@ static enum hrtimer_restart new_ar_regu_timer_callback(struct hrtimer *timer);
  **************************************************************************/
 /* Model */
 extern void init_weight_matrix(struct core_info *cinfo);
+extern u32  get_regulation_time(void);
 
 /**************************************************************************
  * Global Variables
@@ -121,7 +122,7 @@ static inline u64 convert_mb_to_events(int mb)
 }
 
 /* Convert # of events to MB/s */
-static inline int convert_events_to_mb(u64 events)
+static inline u64 convert_events_to_mb(u64 events)
 {
 	/*Linux Kernel Programming (Kaiwan N Billimoria)
 
@@ -174,7 +175,7 @@ static enum hrtimer_restart new_ar_regu_timer_callback(struct hrtimer *timer)
     */
     cinfo->read_event->pmu->stop(cinfo->read_event, PERF_EF_UPDATE);
 
-    u64 read_event_new_budget = atomic64_read(&cinfo->budget_est) + g_bw_intial_setpoint_mb[cpu_id];
+    u64 read_event_new_budget = atomic64_read(&cinfo->budget_est) + convert_mb_to_events(g_bw_intial_setpoint_mb[cpu_id]);
     local64_set(&cinfo->read_event->hw.period_left, read_event_new_budget);
     trace_printk("CPU(%u):New budget: %llu\n",cpu_id,read_event_new_budget);
 
@@ -496,7 +497,7 @@ static int  setup_cpu_info(const u8 cpu_id){
     cinfo->cpu_id = cpu_id;
 
     /* Initialize with initial setpoint bandwidth values */
-    cinfo->prev_used_bw_mb = g_bw_intial_setpoint_mb[cinfo->cpu_id];
+    cinfo->prev_used_bw_mb = convert_events_to_mb(g_bw_intial_setpoint_mb[cinfo->cpu_id]);
     cinfo->used_bw_idx = 0;
     cinfo->used_bw_mb_list[cinfo->used_bw_idx] = cinfo->prev_used_bw_mb;
     cinfo->used_bw_idx++;
@@ -599,6 +600,8 @@ static void deinitialize_cpu_info( const u8 cpu_id){
 void start_regulation(u8 cpu_id){
     struct core_info* cinfo = get_core_info(cpu_id);
     BUG_ON(cinfo==NULL);
+    cinfo->next_estimate=0;
+    cinfo->prev_estimate=0;
 
     /* Enable perf event */
     enable_event(cinfo->read_event);

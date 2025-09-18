@@ -23,7 +23,7 @@
 /**************************************************************************
  * Globals
  **************************************************************************/
-static u32 ar_regulation_time_ms = 1000; //ms, default 1000ms
+static u32 ar_regulation_time_ms = 1; //ms, default 1000ms
 static u32 ar_observation_time_ms = 1000;
 static u32 ar_sw_size = 25;  //If changing this change SLIDING_WINDOW_SIZE as well
 atomic_t enable_reg; // Memory regulation enabled or disabled via debugfs
@@ -265,7 +265,7 @@ void inline ar_remove_debugfs(void){
     debugfs_remove_recursive(ar_dir);
 }
 
-u32 inline get_regulation_time(void){
+u32  get_regulation_time(void){
 	return ar_regulation_time_ms;
 }
 
