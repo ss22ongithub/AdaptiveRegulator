@@ -12,6 +12,7 @@ export CPUSET_BACK_NAME="C3"
 
 export BASE_DATA_PATH=/home/ss22/Workspace/data/
 export MEMG_PATH=with_ar/
+#export MEMG_PATH=with_memguard/
 
 
 export benchmarks_single=(
@@ -159,57 +160,6 @@ function cleanup() {
  	fi
 }
 
-##################################################################################################
-
-# function xxxxxxx() {
-	
-# 	export bm=$1
-	
-# 	dry_run=""
-# 	if [ -n "$2" ]; then
-#    	dry_run="--fakereport"
-# 	fi
-
-# 	RUN_DATA_PATH="$BASE_DATA_PATH$MEMG_PATH$bm"
-
-# 	export dt=`date +"%Y-%m-%d-%H-%M-%S"`
-	
-# 	export INTERVAL_MSEC=1000
-
-
-# 	execute_config "Creating $RUN_DATA_PATH" "mkdir -p $RUN_DATA_PATH ; sudo chmod 777 $RUN_DATA_PATH" 
-
-# 	# monitor the LLC cache misses 
-# 	export PERF_CSV_FILEPATH="$BASE_DATA_PATH$MEMG_PATH$bm/$bm-llc-$dry_run-miss-$dt.csv"
-# 	echo "PERF Into $PERF_CSV_FILEPATH"
-# 	perf stat -x , -e  LLC-load-misses,LLC-store-misses -C $CPU_CORE_ID  -I $INTERVAL_MSEC -o $PERF_CSV_FILEPATH &
-# 	export PERF_PID=$!
-
-# 	echo "Started PERF stat($PERF_PID)"
-
-# 	# Run specific task inside the shield, option paramters are passed to COMMAND not to cset
-# 	# cset shield -e  COMMAND --  option1 option2 option-n
-# 	# runcpu options
-# 	# --nobuild does not build the banchmark , previously built 
-# 	# --copies=1 only one instance of the benchmark 
-# 	# --noreportable  = no PDF report 
-# 	# --iterations= no. of iteration 
-# 	# --tune=base - only base test  
-# 	# --output_format=none  - disable reports in deafult formats 
-# 	# --fakereport  , runs only the per script without the benchmark 
-	
-
-	
-# # Schedule an benchmark in isolation on core 5 and retriev the IPC using perf 
-#  #cset shield -e perf -- stat -e instructions,cycles runcpu  --config=15March2024.cfg --size=test --nobuild --copies=1  --noreportable --iterations=3 --tune=base --output_format=none 500.perlbench_r
- 
-# 	cleanup
-
-# 	preprocess_separate_load_store_misses "$PERF_CSV_FILEPATH"
-
-
-
-# }
 ################# MAIN ##################################
 
 function monitor_llc_cache_miss() {
@@ -285,7 +235,8 @@ function init(){
 
 #####################################################################################r###################
 rundt=`date +"%Y-%m-%d-%H-%M-%S"`
-BACKGROUND_TASK="503.bwaves_r"
+BACKGROUND_TASK="519.lbm_r"
+
 #FOREGROUND_TASK="500.perlbench_r"
 #run_benchmark $BACKGROUND_TASK $rundt $CPUSET_BACK_NAME "COSCHED" &
 #pid_back=$!
