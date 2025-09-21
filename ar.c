@@ -81,7 +81,8 @@ extern u32  get_regulation_time(void);
 static int g_read_counter_id = PMU_LLC_MISS_COUNTER_ID;
 module_param(g_read_counter_id, hexint,  S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
 
-static u64 g_bw_intial_setpoint_mb[MAX_NO_CPUS+1] = {0,3000,3000,3000,3000}; /*Bandwidth setpoints in MB/s */
+static u64 g_bw_intial_setpoint_mb[MAX_NO_CPUS+1] = {0,1000,1000,1000,1000}; /*Satitically defined initial / min Bandwidth in MB/s */
+static u64 g_bw_max_mb[MAX_NO_CPUS+1] = {0,10000,10000,10000,10000}; /*Statically defined max Bandwidth per core in MB/s */
 
 
 
@@ -630,6 +631,7 @@ void stop_regulation(u8 cpu_id){
 static int __init ar_init (void ){
 
     pr_info("Supported CPUs: %d, online_cpus: %d\n", NR_CPUS, num_online_cpus());
+//    pr_info("FPU supported : %d",kernel_fpu_available());
 
     //Initialise core infos
     memset(all_cinfo, 0, sizeof(all_cinfo));

@@ -16,6 +16,10 @@ extern u64 estimate(u64* feat, u8 feat_len, float *wm, u8 wm_len, u8 index);
 extern void update_weight_matrix(s64 error,struct core_info* cinfo );
 extern u32  get_regulation_time(void);
 
+
+static u64 g_bw_max_mb[MAX_NO_CPUS+1] = {0,30000,30000,30000,30000}; /*Statically defined max Bandwidth per core in MB/s */
+
+
 /* Inline function */
 /** convert MB/s to #of events (i.e., LLC miss counts) per 1ms */
 static inline u64 convert_mb_to_events(int mb)
@@ -105,6 +109,17 @@ static int master_thread_func(void * data) {
                                                      cinfo->weight_matrix,
                                                      sizeof(cinfo->weight_matrix)/sizeof(cinfo->weight_matrix[0]),
                                                      cinfo->ri);
+                    
+                    if(cinfo->next_estimate < 0){
+						trace_printk("CPU(%u): Negative Estimate!\n",cpu_id);
+                        cinfo->next_estimate  = cinfo->g_read_count_used;
+                    }
+					if (cinfo->next_estimate > g_bw_max_mb[cpu_id]){
+						trace_printk("CPU(%u): Estimated > Max Limit \n",cpu_id);
+						cinfo->next_estimate = g_bw_max_mb[cpu_id];
+					}
+                    
+
                     atomic64_set(&cinfo->budget_est, convert_mb_to_events(cinfo->next_estimate));
 //                    if(!cinfo->prev_estimate){
 //                        cinfo->prev_estimate=cinfo->next_estimate;
