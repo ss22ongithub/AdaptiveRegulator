@@ -9,7 +9,7 @@ void update_weight_matrix(s64 error, struct core_info *cinfo );
 void print_float(char* buf, float value);
 float avg(const u64 * f , u8 len );
 void init_weight_matrix(struct core_info *cinfo);
-
+const float  LRATE = 0.00001;
 
 #define float_len 10
 
@@ -84,15 +84,14 @@ u64 estimate(u64* feat, u8 feat_len, float *wm, u8 wm_len, u8 index) {
     // Convert the float to an integer representation for printk. Preserves 6 decimal places.
     kernel_fpu_end();
     u64 integer_part = (int)result;
-    // u64 fractional_part = (int)((result - integer_part) * 1000000);
-    // trace_printk(" %llu.%llu \n", integer_part, fractional_part);
+    //u64 fractional_part = (int)((result - integer_part) * 1000000);
+    //trace_printk(" %lld.%llu \n", integer_part, fractional_part);
     return integer_part;
 }
 
 static u64 l2_norm(u64* feature, u8 feat_len){
     u64 norm_sq = 0;
     for (u8 i = 0; i < feat_len; ++i) {
-//        norm_sq += feature[i] * feature[i] ;0
         norm_sq += mul_u64_u64_shr(feature[i],feature[i], 16) ;
     }
     return norm_sq;
@@ -112,14 +111,14 @@ update_weight_matrix(s64 error,struct core_info* cinfo ){
     error = error * sign_bit;
     // At this point error is always +ve
 
-    const float  lrate = 0.000005;
+
     float  product[HIST_SIZE] = {0};
 
     kernel_fpu_begin();
     for (u8 i = 0; i <HIST_SIZE ; ++i) {
         u64 t1 = mul_u64_u64_shr(error,cinfo->read_event_hist[i],0);
         float  t2 = t1 / norm_sq;
-        product[i] = t2 * lrate;
+        product[i] = t2 * LRATE;
         // Sign bit is used while updating the weight vector
         cinfo->weight_matrix[i] = cinfo->weight_matrix[i] + (sign_bit * product[i]);
     }
