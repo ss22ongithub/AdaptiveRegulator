@@ -5,6 +5,7 @@
 #define SLIDING_WINDOW_SIZE 25
 #define HIST_SIZE 5
 #define CACHE_LINE_SIZE 64
+#define MAX_NO_CPUS 4
 
 /* Each CPU core's info */
 struct core_info {
