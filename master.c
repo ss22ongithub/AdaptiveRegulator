@@ -2,9 +2,8 @@
 #include "master.h"
 #include "ar.h"
 #include "ar_perfs.h"
-
-
-
+#include "utils.h"
+#include "model.h"
 
 static struct task_struct* mthread = NULL;
 
@@ -12,89 +11,12 @@ static struct task_struct* mthread = NULL;
 static void throttle( u8 cpu_id) __attribute__((unused));
 static void unthrottle( u8 cpu_id) __attribute__((unused));
 
-
 /* External Functions */
 extern u64 estimate(u64* feat, u8 feat_len, double *wm, u8 wm_len, u8 index);
 extern void update_weight_matrix(s64 error,struct core_info* cinfo );
-extern u32  get_regulation_time(void);
-void init_weight_matrix(struct core_info *cinfo);
-
-
-extern u64 g_bw_intial_setpoint_mb[MAX_NO_CPUS+1]; /*Statically defined initial / min Bandwidth in MB/s */
-extern u64 g_bw_max_mb[MAX_NO_CPUS+1];/*Statically defined max Bandwidth per core in MB/s */
-
-
-//TODO: move to util 
-
-#define precision 8
-#define double_len (precision + 3)
-void print_double(char* buf, double value)
-{
-    int digits;
-    int i;
-    int k;
-    
-    /*Extract the sign*/
-        
-    i =0;   
-    if (value < 0 ) {
-        buf[i++] = '-';
-        value = value *(-1);
-        //trace_printk("\nvalue = %lf\n",value);
-    }
-    
-    /*Count the number of digits before the decimal point*/
-    
-    digits = 1;
-    while (value >= 10){
-        value /= 10; digits++;      
-    }
-//  WARN_ON(digits <= double_len - 2);
-    
-    for (k = 0; k < double_len - 2; k++)
-    {
-        buf[i] = '0';
-        while (value >= 1 && buf[i] < '9')
-        {
-            buf[i]++;
-            value -= 1;
-        }
-        i++;
-        digits--;
-        if (digits == 0)
-        {
-            buf[i] = '.';
-            i++;
-        }
-        value *= 10;
-    }
-//  WARN_ON(i == double_len - 1);
-    buf[i] = 0;
-}
-
-
-/* Inline function */
-/** convert MB/s to #of events (i.e., LLC miss counts) per 1ms */
-static inline u64 convert_mb_to_events(int mb)
-{
-    return div64_u64((u64)mb*1024*1024,
-             CACHE_LINE_SIZE * (1000/get_regulation_time()));
-}
-
-/* Convert # of events to MB/s */
-static inline u64 convert_events_to_mb(u64 events)
-{
-    /*
-     * BW  = (event * CACHE_LINE_SIZE)/ time_in_ms  - bytes/ms 
-     *     =  (event * CACHE )/ (time_in_ms * 1024 *1024)  = mb/ms
-     *     =  (event * CACHE * 1000 )/ (time_in_sec * 1024 *1024)  = mb/s
-     */ 
-    int divisor = get_regulation_time()*1024*1024;
-    int mb = div64_u64(events*CACHE_LINE_SIZE*1000 + (divisor-1), divisor);
-    return mb;
-}
-
-
+/* External Variables / constants */
+extern u64 g_bw_intial_setpoint_mb[MAX_NO_CPUS+1];/*Pre-defined initial / min Bandwidth in MB/s */
+extern u64 g_bw_max_mb[MAX_NO_CPUS+1]; /*Pre-defined max Bandwidth per core in MB/s */
 
 /* WARNING: This function should be kept strictly re-entrant */
 static void throttle( u8 cpu_id)
@@ -165,7 +87,7 @@ static int master_thread_func(void * data) {
                     if(cinfo->next_estimate < 0){
 						trace_printk("CPU(%u): Negative Estimate=%lld \n",cpu_id,cinfo->next_estimate);
                         //reset the weights
-                        init_weight_matrix(cinfo);
+                        initialize_weight_matrix(cinfo);
                         continue;
                     }
 					
@@ -183,7 +105,9 @@ static int master_thread_func(void * data) {
 
                     char buf[HIST_SIZE][51]={0};    
                         for (u8 i = 0; i < HIST_SIZE; i++){
-                        print_double(buf[i],cinfo->weight_matrix[i]);
+                         kernel_fpu_begin();
+                         print_double(buf[i],cinfo->weight_matrix[i]);
+                         kernel_fpu_end();
                     }
 
 

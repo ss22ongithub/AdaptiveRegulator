@@ -1,14 +1,18 @@
 #include "kernel_headers.h"
 #include "ar.h"
+#include "model.h"
+/**********************  Static Function Prototypes **********************************************/
+static double lms_predict(const u64* feat, u8 feat_len,double *wm, u8 wm_len, u8 ri);
+static double avg(const u64 * f , u8 len );
+/**********************  Static  Function Prototypes **********************************************/
 
 
 /** Function Prototypes **/
 u64 estimate(u64* feat, u8 feat_len, double *wm, u8 wm_len, u8 index);
-double lms_predict(const u64* feat, u8 feat_len,double *wm, u8 wm_len, u8 ri);
 void update_weight_matrix(s64 error, struct core_info *cinfo );
-
-double avg(const u64 * f , u8 len );
 void init_weight_matrix(struct core_info *cinfo);
+
+/** Constants **/
 const double  LRATE = 0.000001;
 
 
@@ -50,6 +54,10 @@ u64 estimate(u64* feat, u8 feat_len, double *wm, u8 wm_len, u8 index) {
     
     // Ignore fractional part of the results 
     u64 integer_part = (int)result;
+    /*
+        u64 fractional_part = (int)((result - integer_part) * 1000000);
+        trace_printk(" %llu.%llu \n", integer_part, fractional_part);
+     */
     return integer_part;
 }
 
@@ -117,11 +125,10 @@ update_weight_matrix(s64 error,struct core_info* cinfo ){
 
 }
 
-void init_weight_matrix(struct core_info *cinfo){
+void initialize_weight_matrix(struct core_info *cinfo){
     const double init_weights[HIST_SIZE]={0.1, 0.1, 0.1, 0.1, 0.1};
 
     for(u8 i =0 ; i < HIST_SIZE; i++){
         cinfo->weight_matrix[i] = init_weights[i];    
     }
-    
 }
