@@ -19,4 +19,8 @@ modules.order
 # Ignore traces and collected data
 traces/
 dataprocessing/
+scripts/fg_bg.csv
+send_files.h
+tmp/
+
 
