@@ -219,7 +219,7 @@ function run_benchmark() {
 	export INTERVAL_MSEC=1000
 	export RUN_DATA_PATH="$BASE_DATA_PATH$MEMG_PATH$BENCHMARK_NAME/RUN-$rundt"
 
-/
+
 	RUN_EXE_PATH="$SPEC/benchspec/CPU/$BENCHMARK_NAME/run/run_base_test_all-suites-execution-times-m64.0000/"
 	echo "RUNEXE_PATH = $RUN_EXE_PATH"
 
@@ -262,7 +262,7 @@ export benchmarks_bg=(
 "519.lbm_r"
 )
 
-for benchmark in "${benchmarks_bg[@]}";
+for benchmark in "${benchmarks_all[@]}";
 do
  	echo "============================================$benchmark START============================================"
  	run_benchmark $benchmark $rundt
