@@ -4,7 +4,6 @@
 // TODO: CHANGE AR_SW_SIZE IN AR_DEBUGFS.C AS WELL
 #define SLIDING_WINDOW_SIZE 25
 #define HIST_SIZE 5
-#define CACHE_LINE_SIZE 64
 #define MAX_NO_CPUS 4
 
 /* Each CPU core's info */
@@ -30,13 +29,6 @@ struct core_info {
   struct task_struct *throttler_thread;
 
   //  Bandwidth utilization parameters
-  u64 prev_used_bw_mb; /* BW utilized in the previous regulation interval ,
-                          units: Mbps*/
-  u64 cur_used_bw_mb;
-  u64 used_bw_mb_list[SLIDING_WINDOW_SIZE];
-  u64 used_avg_bw_mb;
-  u32 used_bw_idx;
-
   // PMC events
   struct perf_event *read_event;
 
@@ -54,15 +46,6 @@ struct core_info {
   s64 next_estimate;
   s64 prev_estimate;
   
-};
-
-struct utilization {
-  s64 prev_used_bw_mb; /* BW utilized in the previous regulation interval ,
-                          units: Mbps*/
-  s64 cur_used_bw_mb;
-  u64 used_bw_mb_list[SLIDING_WINDOW_SIZE];
-  u64 used_avg_bw_mb;
-  u32 used_bw_idx;
 };
 
 struct core_info *get_core_info(u8 cpu_id);
