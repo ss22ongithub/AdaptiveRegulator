@@ -81,8 +81,8 @@ extern u32  get_regulation_time(void);
 static int g_read_counter_id = PMU_LLC_MISS_COUNTER_ID;
 module_param(g_read_counter_id, hexint,  S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
 
-static u64 g_bw_intial_setpoint_mb[MAX_NO_CPUS+1] = {0,1000,1000,1000,1000}; /*Satitically defined initial / min Bandwidth in MB/s */
-static u64 g_bw_max_mb[MAX_NO_CPUS+1] = {0,10000,10000,10000,10000}; /*Statically defined max Bandwidth per core in MB/s */
+u64 g_bw_intial_setpoint_mb[MAX_NO_CPUS+1] = {0,1000,1000,1000,1000}; /*Satitically defined initial / min Bandwidth in MB/s */
+u64 g_bw_max_mb[MAX_NO_CPUS+1] = {0,30000,30000,30000,30000}; /*Statically defined max Bandwidth per core in MB/s */
 
 
 
@@ -176,7 +176,7 @@ static enum hrtimer_restart new_ar_regu_timer_callback(struct hrtimer *timer)
     */
     cinfo->read_event->pmu->stop(cinfo->read_event, PERF_EF_UPDATE);
 
-    u64 read_event_new_budget = atomic64_read(&cinfo->budget_est) + convert_mb_to_events(g_bw_intial_setpoint_mb[cpu_id]);
+    u64 read_event_new_budget = atomic64_read(&cinfo->budget_est);
     local64_set(&cinfo->read_event->hw.period_left, read_event_new_budget);
     trace_printk("CPU(%u):New budget: %llu\n",cpu_id,read_event_new_budget);
 

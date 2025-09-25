@@ -3,17 +3,17 @@
 
 
 /** Function Prototypes **/
-u64 estimate(u64* feat, u8 feat_len, float *wm, u8 wm_len, u8 index);
-float lms_predict(const u64* feat, u8 feat_len,float *wm, u8 wm_len, u8 ri);
+u64 estimate(u64* feat, u8 feat_len, double *wm, u8 wm_len, u8 index);
+double lms_predict(const u64* feat, u8 feat_len,double *wm, u8 wm_len, u8 ri);
 void update_weight_matrix(s64 error, struct core_info *cinfo );
-void print_float(char* buf, float value);
-float avg(const u64 * f , u8 len );
+void print_double(char* buf, double value);
+double avg(const u64 * f , u8 len );
 void init_weight_matrix(struct core_info *cinfo);
-const float  LRATE = 0.00001;
+const double  LRATE = 0.0000001;
 
-#define float_len 10
+#define double_len 10
 
-void print_float(char* buf, float value)
+void print_double(char* buf, double value)
 {
 	int digits;
 	int i;
@@ -22,10 +22,10 @@ void print_float(char* buf, float value)
 	digits = 1;
 	while (value >= 10) value /= 10, digits++;
 	
-//	WARN_ON(digits <= float_len - 2);
+//	WARN_ON(digits <= double_len - 2);
 	
 	i = 0;
-	for (k = 0; k < float_len - 2; k++)
+	for (k = 0; k < double_len - 2; k++)
 	{
 		buf[i] = '0';
 		while (value >= 1 && buf[i] < '9')
@@ -42,14 +42,15 @@ void print_float(char* buf, float value)
 		}
 		value *= 10;
 	}
-//	WARN_ON(i == float_len - 1);
+//	WARN_ON(i == double_len - 1);
 	buf[i] = 0;
 }
 
 
-float lms_predict(const u64* feat, u8 feat_len,float *wm, u8 wm_len, u8 ri){
-    const float bias = 0.0;
-    float sum = 0.0f;
+
+double lms_predict(const u64* feat, u8 feat_len,double *wm, u8 wm_len, u8 ri){
+    const double bias = 0.0;
+    double sum = 0.0f;
     int i =0;
     for (int j = ri; i < wm_len && j >= 0; i++, j--){
         sum += wm[i] * feat[j];
@@ -63,9 +64,9 @@ float lms_predict(const u64* feat, u8 feat_len,float *wm, u8 wm_len, u8 ri){
     return sum;
 }
 
-float avg(const u64 * f , u8 len ){
+double avg(const u64 * f , u8 len ){
 //    pr_info("%x %d",f,len);
-    float sum = 0.0f;
+    double sum = 0.0f;
     u8 i = 0;
     if (len == 0) {
         return 0.0f;
@@ -77,11 +78,11 @@ float avg(const u64 * f , u8 len ){
 }
 
 
-u64 estimate(u64* feat, u8 feat_len, float *wm, u8 wm_len, u8 index) {
+u64 estimate(u64* feat, u8 feat_len, double *wm, u8 wm_len, u8 index) {
     kernel_fpu_begin();
-    // float result = lms_predict(feat,feat_len,wm , wm_len, index);
-    float result = lms_predict(feat,feat_len, wm ,  wm_len, index);
-    // Convert the float to an integer representation for printk. Preserves 6 decimal places.
+    // double result = lms_predict(feat,feat_len,wm , wm_len, index);
+    double result = lms_predict(feat,feat_len, wm ,  wm_len, index);
+    // Convert the double to an integer representation for printk. Preserves 6 decimal places.
     kernel_fpu_end();
     u64 integer_part = (int)result;
     //u64 fractional_part = (int)((result - integer_part) * 1000000);
@@ -112,12 +113,12 @@ update_weight_matrix(s64 error,struct core_info* cinfo ){
     // At this point error is always +ve
 
 
-    float  product[HIST_SIZE] = {0};
+    double  product[HIST_SIZE] = {0};
 
     kernel_fpu_begin();
     for (u8 i = 0; i <HIST_SIZE ; ++i) {
         u64 t1 = mul_u64_u64_shr(error,cinfo->read_event_hist[i],0);
-        float  t2 = t1 / norm_sq;
+        double  t2 = t1 / norm_sq;
         product[i] = t2 * LRATE;
         // Sign bit is used while updating the weight vector
         cinfo->weight_matrix[i] = cinfo->weight_matrix[i] + (sign_bit * product[i]);
@@ -128,12 +129,12 @@ update_weight_matrix(s64 error,struct core_info* cinfo ){
     char buf[HIST_SIZE][51]={0};
     char buf2[HIST_SIZE][51]={0};
     for (u8 i = 0; i < HIST_SIZE; i++){
-        print_float(buf[i],cinfo->weight_matrix[i]);
-        // print_float(buf2[i],product[i]);
+        print_double(buf[i],cinfo->weight_matrix[i]);
+        // print_double(buf2[i],product[i]);
     }
 
-    trace_printk("\n CPU(%u) | Weights ( %s %s %s %s %s) \n",
-                 cinfo->cpu_id,
+    trace_printk("\n CPU(%u) | HIST_SIZE=%d Weights ( %s %s %s %s %s) \n",
+                 cinfo->cpu_id, HIST_SIZE,
                  buf[0],buf[1],buf[2],buf[3], buf[4]);
 #if 0
     // trace_printk("\n CPU(%u)| read_event_hist( %llu, %llu, %llu, %llu, %llu)|ri=%u |\n error=%lld | norm_sq=%llu\n",
@@ -152,8 +153,8 @@ update_weight_matrix(s64 error,struct core_info* cinfo ){
 }
 
 void init_weight_matrix(struct core_info *cinfo){
-//    const float init_weights[HIST_SIZE]={0.17017401, 0.19412817, 0.17890527, 0.21347153, 0.25384151};
-    const float init_weights[HIST_SIZE]={0.1, 0.1, 0.1, 0.1, 0.1};
+//    const double init_weights[HIST_SIZE]={0.17017401, 0.19412817, 0.17890527, 0.21347153, 0.25384151};
+    const double init_weights[HIST_SIZE]={0.1, 0.1, 0.1, 0.1, 0.1};
 
     for(u8 i =0 ; i < HIST_SIZE; i++){
         cinfo->weight_matrix[i] = init_weights[i];

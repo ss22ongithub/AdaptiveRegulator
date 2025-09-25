@@ -48,7 +48,7 @@ struct core_info {
   // Computed by master core
   atomic64_t budget_est;
   /* Each core has an array of weights to generate the prediction */
-  float weight_matrix [HIST_SIZE];
+  double weight_matrix [HIST_SIZE];
   s64 next_estimate;
   s64 prev_estimate;
 

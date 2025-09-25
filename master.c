@@ -12,12 +12,13 @@ static void throttle( u8 cpu_id) __attribute__((unused));
 static void unthrottle( u8 cpu_id) __attribute__((unused));
 
 /* External Functions */
-extern u64 estimate(u64* feat, u8 feat_len, float *wm, u8 wm_len, u8 index);
+extern u64 estimate(u64* feat, u8 feat_len, double *wm, u8 wm_len, u8 index);
 extern void update_weight_matrix(s64 error,struct core_info* cinfo );
 extern u32  get_regulation_time(void);
 
 
-static u64 g_bw_max_mb[MAX_NO_CPUS+1] = {0,30000,30000,30000,30000}; /*Statically defined max Bandwidth per core in MB/s */
+extern u64 g_bw_intial_setpoint_mb[MAX_NO_CPUS+1]; /*Statically defined initial / min Bandwidth in MB/s */
+extern u64 g_bw_max_mb[MAX_NO_CPUS+1];/*Statically defined max Bandwidth per core in MB/s */
 
 
 /* Inline function */
@@ -108,23 +109,20 @@ static int master_thread_func(void * data) {
                                                      sizeof(cinfo->read_event_hist)/sizeof(cinfo->read_event_hist[0]),
                                                      cinfo->weight_matrix,
                                                      sizeof(cinfo->weight_matrix)/sizeof(cinfo->weight_matrix[0]),
-                                                     cinfo->ri);
+                                                     cinfo->ri) + g_bw_intial_setpoint_mb[cpu_id];
                     
                     if(cinfo->next_estimate < 0){
-						trace_printk("CPU(%u): Negative Estimate!\n",cpu_id);
-                        cinfo->next_estimate  = cinfo->g_read_count_used;
+						trace_printk("CPU(%u): Negative Estimate=%lld\n",cpu_id,cinfo->next_estimate);
+                        // cinfo->next_estimate  = cinfo->g_read_count_used;
                     }
-					if (cinfo->next_estimate > g_bw_max_mb[cpu_id]){
-						trace_printk("CPU(%u): Estimated > Max Limit \n",cpu_id);
-						cinfo->next_estimate = g_bw_max_mb[cpu_id];
-					}
+					// if (cinfo->next_estimate > g_bw_max_mb[cpu_id]){
+					// 	trace_printk("CPU(%u): Estimated(%u) = %lld > Max Limit \n",cpu_id, cinfo->next_estimate);
+					// 	cinfo->next_estimate = g_bw_max_mb[cpu_id];
+					// }
                     
 
                     atomic64_set(&cinfo->budget_est, convert_mb_to_events(cinfo->next_estimate));
-//                    if(!cinfo->prev_estimate){
-//                        cinfo->prev_estimate=cinfo->next_estimate;
-//                        continue;
-//                    }
+
                     s64 error = cinfo->g_read_count_used - cinfo->prev_estimate;
                     update_weight_matrix(error,cinfo);
 
