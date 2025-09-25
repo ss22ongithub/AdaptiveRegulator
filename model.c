@@ -1,19 +1,15 @@
 #include "kernel_headers.h"
 #include "ar.h"
+#include "model.h"
+/**********************  Function Prototypes **********************************************/
+static float lms_predict(const u64* feat, u8 feat_len,float *wm, u8 wm_len, u8 ri);
+static void print_float(char* buf, float value);
+static float avg(const u64 * f , u8 len );
+/**********************   Function Prototypes **********************************************/
 
+#define FLOAT_LEN 10
 
-/** Function Prototypes **/
-u64 estimate(u64* feat, u8 feat_len, float *wm, u8 wm_len, u8 index);
-float lms_predict(const u64* feat, u8 feat_len,float *wm, u8 wm_len, u8 ri);
-void update_weight_matrix(s64 error, struct core_info *cinfo );
-void print_float(char* buf, float value);
-float avg(const u64 * f , u8 len );
-void init_weight_matrix(struct core_info *cinfo);
-
-
-#define float_len 10
-
-void print_float(char* buf, float value)
+static void print_float(char* buf, float value)
 {
 	int digits;
 	int i;
@@ -22,10 +18,10 @@ void print_float(char* buf, float value)
 	digits = 1;
 	while (value >= 10) value /= 10, digits++;
 	
-//	WARN_ON(digits <= float_len - 2);
+//	WARN_ON(digits <= FLOAT_LEN - 2);
 	
 	i = 0;
-	for (k = 0; k < float_len - 2; k++)
+	for (k = 0; k < FLOAT_LEN - 2; k++)
 	{
 		buf[i] = '0';
 		while (value >= 1 && buf[i] < '9')
@@ -42,12 +38,12 @@ void print_float(char* buf, float value)
 		}
 		value *= 10;
 	}
-//	WARN_ON(i == float_len - 1);
+//	WARN_ON(i == FLOAT_LEN - 1);
 	buf[i] = 0;
 }
 
 
-float lms_predict(const u64* feat, u8 feat_len,float *wm, u8 wm_len, u8 ri){
+static float lms_predict(const u64* feat, u8 feat_len,float *wm, u8 wm_len, u8 ri){
     const float bias = 0.0;
     float sum = 0.0f;
     int i =0;
@@ -63,7 +59,7 @@ float lms_predict(const u64* feat, u8 feat_len,float *wm, u8 wm_len, u8 ri){
     return sum;
 }
 
-float avg(const u64 * f , u8 len ){
+static float avg(const u64 * f , u8 len ){
 //    pr_info("%x %d",f,len);
     float sum = 0.0f;
     u8 i = 0;
@@ -76,6 +72,14 @@ float avg(const u64 * f , u8 len ){
     return (sum/len);
 }
 
+static u64 l2_norm(u64* feature, u8 feat_len){
+    u64 norm_sq = 0;
+    for (u8 i = 0; i < feat_len; ++i) {
+//        norm_sq += feature[i] * feature[i] ;0
+        norm_sq += mul_u64_u64_shr(feature[i],feature[i], 16) ;
+    }
+    return norm_sq;
+}
 
 u64 estimate(u64* feat, u8 feat_len, float *wm, u8 wm_len, u8 index) {
     kernel_fpu_begin();
@@ -89,14 +93,7 @@ u64 estimate(u64* feat, u8 feat_len, float *wm, u8 wm_len, u8 index) {
     return integer_part;
 }
 
-static u64 l2_norm(u64* feature, u8 feat_len){
-    u64 norm_sq = 0;
-    for (u8 i = 0; i < feat_len; ++i) {
-//        norm_sq += feature[i] * feature[i] ;0
-        norm_sq += mul_u64_u64_shr(feature[i],feature[i], 16) ;
-    }
-    return norm_sq;
-}
+
 
 void 
 update_weight_matrix(s64 error,struct core_info* cinfo ){
@@ -152,11 +149,9 @@ update_weight_matrix(s64 error,struct core_info* cinfo ){
 
 }
 
-void init_weight_matrix(struct core_info *cinfo){
+void initialize_weight_matrix(struct core_info *cinfo){
 //    const float init_weights[HIST_SIZE]={0.17017401, 0.19412817, 0.17890527, 0.21347153, 0.25384151};
-    const float init_weights[HIST_SIZE]={0.1, 0.1, 0.1, 0.1, 0.1};
-
     for(u8 i =0 ; i < HIST_SIZE; i++){
-        cinfo->weight_matrix[i] = init_weights[i];
+        cinfo->weight_matrix[i] = INITIAL_WEIGHT;
     }
 }

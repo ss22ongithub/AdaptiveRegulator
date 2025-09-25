@@ -2,7 +2,7 @@
 #include "master.h"
 #include "ar.h"
 #include "ar_perfs.h"
-
+#include "utils.h"
 
 
 static struct task_struct* mthread = NULL;
@@ -14,30 +14,6 @@ static void unthrottle( u8 cpu_id) __attribute__((unused));
 /* External Functions */
 extern u64 estimate(u64* feat, u8 feat_len, float *wm, u8 wm_len, u8 index);
 extern void update_weight_matrix(s64 error,struct core_info* cinfo );
-extern u32  get_regulation_time(void);
-
-/* Inline function */
-/** convert MB/s to #of events (i.e., LLC miss counts) per 1ms */
-static inline u64 convert_mb_to_events(int mb)
-{
-    return div64_u64((u64)mb*1024*1024,
-             CACHE_LINE_SIZE * (1000/get_regulation_time()));
-}
-
-/* Convert # of events to MB/s */
-static inline u64 convert_events_to_mb(u64 events)
-{
-    /*
-     * BW  = (event * CACHE_LINE_SIZE)/ time_in_ms  - bytes/ms 
-     *     =  (event * CACHE )/ (time_in_ms * 1024 *1024)  = mb/ms
-     *     =  (event * CACHE * 1000 )/ (time_in_sec * 1024 *1024)  = mb/s
-     */ 
-    int divisor = get_regulation_time()*1024*1024;
-    int mb = div64_u64(events*CACHE_LINE_SIZE*1000 + (divisor-1), divisor);
-    return mb;
-}
-
-
 
 /* WARNING: This function should be kept strictly re-entrant */
 static void throttle( u8 cpu_id)
