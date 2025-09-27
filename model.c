@@ -9,7 +9,7 @@ void update_weight_matrix(s64 error, struct core_info *cinfo );
 void print_double(char* buf, double value);
 double avg(const u64 * f , u8 len );
 void init_weight_matrix(struct core_info *cinfo);
-const double  LRATE = 0.0000001;
+const double  LRATE = 0.000001;
 
 #define double_len 10
 
