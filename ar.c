@@ -219,14 +219,8 @@ static int  setup_cpu_info(const u8 cpu_id){
     memset(cinfo, sizeof(struct core_info), 0);
     cinfo->cpu_id = cpu_id;
 
-    /* Initialize with initial setpoint bandwidth values */
-    cinfo->prev_used_bw_mb = convert_events_to_mb(g_bw_intial_setpoint_mb[cinfo->cpu_id]);
-    cinfo->used_bw_idx = 0;
-    cinfo->used_bw_mb_list[cinfo->used_bw_idx] = cinfo->prev_used_bw_mb;
-    cinfo->used_bw_idx++;
-
     cinfo->read_event =  init_counter(cinfo->cpu_id,
-                                     convert_mb_to_events(cinfo->prev_used_bw_mb),
+                                     convert_mb_to_events(g_bw_intial_setpoint_mb(cinfo->cpu_id)),
                                      g_read_counter_id,
                                      read_event_overflow_callback);
     if (cinfo->read_event == NULL){
