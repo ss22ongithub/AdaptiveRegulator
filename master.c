@@ -112,14 +112,19 @@ static int master_thread_func(void * data) {
                                                      cinfo->ri) + g_bw_intial_setpoint_mb[cpu_id];
                     
                     if(cinfo->next_estimate < 0){
-						trace_printk("CPU(%u): Negative Estimate=%lld\n",cpu_id,cinfo->next_estimate);
-                        // cinfo->next_estimate  = cinfo->g_read_count_used;
+						trace_printk("CPU(%u): Negative Estimate=%lld \n",cpu_id,cinfo->next_estimate);
+                        //memcpy(cinfo->weight_matrix,cinfo->best_weight_matrix,sizeof(cinfo->best_weight_matrix));
+                        //reset the weights
+                        for(u8 i =0 ; i < HIST_SIZE; i++){
+                            cinfo->weight_matrix[i] = 0.1;
+                        }
+                        continue;
                     }
 					// if (cinfo->next_estimate > g_bw_max_mb[cpu_id]){
 					// 	trace_printk("CPU(%u): Estimated(%u) = %lld > Max Limit \n",cpu_id, cinfo->next_estimate);
 					// 	cinfo->next_estimate = g_bw_max_mb[cpu_id];
 					// }
-                    
+
 
                     atomic64_set(&cinfo->budget_est, convert_mb_to_events(cinfo->next_estimate));
 
