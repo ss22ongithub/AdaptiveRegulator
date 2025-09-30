@@ -48,9 +48,14 @@ struct core_info {
   // Computed by master core
   atomic64_t budget_est;
   /* Each core has an array of weights to generate the prediction */
+
   double weight_matrix [HIST_SIZE];
+  double best_weight_matrix [HIST_SIZE];
+
   s64 next_estimate;
   s64 prev_estimate;
+  // we would store alsways the absolution value of the error
+  u64 prev_err;
 
 };
 

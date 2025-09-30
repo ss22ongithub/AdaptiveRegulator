@@ -133,9 +133,19 @@ update_weight_matrix(s64 error,struct core_info* cinfo ){
         // print_double(buf2[i],product[i]);
     }
 
-    trace_printk("\n CPU(%u) | HIST_SIZE=%d Weights ( %s %s %s %s %s) \n",
-                 cinfo->cpu_id, HIST_SIZE,
+    if(error < cinfo->prev_err){
+        cinfo->prev_err = error;
+        memcpy(cinfo->best_weight_matrix, cinfo->weight_matrix, sizeof(cinfo->best_weight_matrix));
+        trace_printk("\n CPU(%u) | best err = %llu\n",
+                 cinfo->cpu_id,
+                 cinfo->prev_err);
+    }
+
+
+    trace_printk("\n CPU(%u) | Weights ( %s %s %s %s %s) \n",
+                 cinfo->cpu_id,
                  buf[0],buf[1],buf[2],buf[3], buf[4]);
+
 #if 0
     // trace_printk("\n CPU(%u)| read_event_hist( %llu, %llu, %llu, %llu, %llu)|ri=%u |\n error=%lld | norm_sq=%llu\n",
     //     cinfo->cpu_id,
@@ -158,5 +168,7 @@ void init_weight_matrix(struct core_info *cinfo){
 
     for(u8 i =0 ; i < HIST_SIZE; i++){
         cinfo->weight_matrix[i] = init_weights[i];
+        cinfo->best_weight_matrix[i] = init_weights[i];
     }
+    cinfo->prev_err = 1000;
 }
