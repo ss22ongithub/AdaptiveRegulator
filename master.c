@@ -5,20 +5,72 @@
 
 
 
+
 static struct task_struct* mthread = NULL;
 
 /* Unused functions*/
 static void throttle( u8 cpu_id) __attribute__((unused));
 static void unthrottle( u8 cpu_id) __attribute__((unused));
 
+
 /* External Functions */
 extern u64 estimate(u64* feat, u8 feat_len, double *wm, u8 wm_len, u8 index);
 extern void update_weight_matrix(s64 error,struct core_info* cinfo );
 extern u32  get_regulation_time(void);
+void init_weight_matrix(struct core_info *cinfo);
 
 
 extern u64 g_bw_intial_setpoint_mb[MAX_NO_CPUS+1]; /*Statically defined initial / min Bandwidth in MB/s */
 extern u64 g_bw_max_mb[MAX_NO_CPUS+1];/*Statically defined max Bandwidth per core in MB/s */
+
+
+//TODO: move to util 
+
+#define precision 8
+#define double_len (precision + 3)
+void print_double(char* buf, double value)
+{
+    int digits;
+    int i;
+    int k;
+    
+    /*Extract the sign*/
+        
+    i =0;   
+    if (value < 0 ) {
+        buf[i++] = '-';
+        value = value *(-1);
+        //trace_printk("\nvalue = %lf\n",value);
+    }
+    
+    /*Count the number of digits before the decimal point*/
+    
+    digits = 1;
+    while (value >= 10){
+        value /= 10; digits++;      
+    }
+//  WARN_ON(digits <= double_len - 2);
+    
+    for (k = 0; k < double_len - 2; k++)
+    {
+        buf[i] = '0';
+        while (value >= 1 && buf[i] < '9')
+        {
+            buf[i]++;
+            value -= 1;
+        }
+        i++;
+        digits--;
+        if (digits == 0)
+        {
+            buf[i] = '.';
+            i++;
+        }
+        value *= 10;
+    }
+//  WARN_ON(i == double_len - 1);
+    buf[i] = 0;
+}
 
 
 /* Inline function */
@@ -82,7 +134,6 @@ static int master_thread_func(void * data) {
 
     while (!kthread_should_stop() ) {
         u8 cpu_id;
-//        trace_printk("Master thread looping\n");
         if (kthread_should_stop()){
         	pr_info("Stopping thread %s\n",__func__);
             break;
@@ -113,14 +164,13 @@ static int master_thread_func(void * data) {
                     
                     if(cinfo->next_estimate < 0){
 						trace_printk("CPU(%u): Negative Estimate=%lld \n",cpu_id,cinfo->next_estimate);
-                        //memcpy(cinfo->weight_matrix,cinfo->best_weight_matrix,sizeof(cinfo->best_weight_matrix));
                         //reset the weights
-                        for(u8 i =0 ; i < HIST_SIZE; i++){
-                            cinfo->weight_matrix[i] = 0.1;
-                        }
+                        init_weight_matrix(cinfo);
                         continue;
                     }
-					// if (cinfo->next_estimate > g_bw_max_mb[cpu_id]){
+					
+                    //TODO: When estimate crosses a thrhold 
+                    // if (cinfo->next_estimate > g_bw_max_mb[cpu_id]){
 					// 	trace_printk("CPU(%u): Estimated(%u) = %lld > Max Limit \n",cpu_id, cinfo->next_estimate);
 					// 	cinfo->next_estimate = g_bw_max_mb[cpu_id];
 					// }
@@ -131,23 +181,27 @@ static int master_thread_func(void * data) {
                     s64 error = cinfo->g_read_count_used - cinfo->prev_estimate;
                     update_weight_matrix(error,cinfo);
 
+                    char buf[HIST_SIZE][51]={0};    
+                        for (u8 i = 0; i < HIST_SIZE; i++){
+                        print_double(buf[i],cinfo->weight_matrix[i]);
+                    }
+
 
                     (cinfo->ri)++;
                     cinfo->ri = (cinfo->ri == HIST_SIZE)? 0:cinfo->ri;
-                    trace_printk("CPU(%u):Used=%llu nxt_est=%lld err=%lld\n",
+                    trace_printk("CPU(%u):Used=%llu nxt_est=%lld err=%lld w0=%s w1=%s w2=%s w3=%s w4=%s\n",
                                  cpu_id,
                                  cinfo->g_read_count_used,
                                  cinfo->next_estimate,
-                                 error);
+                                 error,
+                                 buf[0],buf[1],buf[2],buf[3], buf[4]);
                     cinfo->prev_estimate=cinfo->next_estimate;
                     break;
                 default:
                     continue;
             }
         }
-       // usleep_range(100,100);
        msleep(1);
-          
     }
 
     pr_info("%s: Exit",__func__);
