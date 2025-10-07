@@ -6,45 +6,10 @@
 u64 estimate(u64* feat, u8 feat_len, double *wm, u8 wm_len, u8 index);
 double lms_predict(const u64* feat, u8 feat_len,double *wm, u8 wm_len, u8 ri);
 void update_weight_matrix(s64 error, struct core_info *cinfo );
-void print_double(char* buf, double value);
+
 double avg(const u64 * f , u8 len );
 void init_weight_matrix(struct core_info *cinfo);
 const double  LRATE = 0.000001;
-
-#define double_len 10
-
-void print_double(char* buf, double value)
-{
-	int digits;
-	int i;
-	int k;
-	
-	digits = 1;
-	while (value >= 10) value /= 10, digits++;
-	
-//	WARN_ON(digits <= double_len - 2);
-	
-	i = 0;
-	for (k = 0; k < double_len - 2; k++)
-	{
-		buf[i] = '0';
-		while (value >= 1 && buf[i] < '9')
-		{
-			buf[i]++;
-			value -= 1;
-		}
-		i++;
-		digits--;
-		if (digits == 0)
-		{
-			buf[i] = '.';
-			i++;
-		}
-		value *= 10;
-	}
-//	WARN_ON(i == double_len - 1);
-	buf[i] = 0;
-}
 
 
 
@@ -65,7 +30,6 @@ double lms_predict(const u64* feat, u8 feat_len,double *wm, u8 wm_len, u8 ri){
 }
 
 double avg(const u64 * f , u8 len ){
-//    pr_info("%x %d",f,len);
     double sum = 0.0f;
     u8 i = 0;
     if (len == 0) {
@@ -79,14 +43,13 @@ double avg(const u64 * f , u8 len ){
 
 
 u64 estimate(u64* feat, u8 feat_len, double *wm, u8 wm_len, u8 index) {
+
     kernel_fpu_begin();
-    // double result = lms_predict(feat,feat_len,wm , wm_len, index);
     double result = lms_predict(feat,feat_len, wm ,  wm_len, index);
-    // Convert the double to an integer representation for printk. Preserves 6 decimal places.
     kernel_fpu_end();
+    
+    // Ignore fractional part of the results 
     u64 integer_part = (int)result;
-    //u64 fractional_part = (int)((result - integer_part) * 1000000);
-    //trace_printk(" %lld.%llu \n", integer_part, fractional_part);
     return integer_part;
 }
 
@@ -101,16 +64,18 @@ static u64 l2_norm(u64* feature, u8 feat_len){
 void 
 update_weight_matrix(s64 error,struct core_info* cinfo ){
     
+    
     // Avoid Divide by zero error
     u64 norm_sq = l2_norm(cinfo->read_event_hist, HIST_SIZE);
     if ( 0 == norm_sq){
         // trace_printk("CPU(%d): Norm Square=0, skipping weight update\n", cinfo->cpu_id);
         return;
     }
+
     // sign_bit: 1 = +ve , -1 = -ve. Convert error to a +ve value
     const s8 sign_bit = (error < 0)?-1:1;
     error = error * sign_bit;
-    // At this point error is always +ve
+    // After this point error is always +ve
 
 
     double  product[HIST_SIZE] = {0};
@@ -126,25 +91,15 @@ update_weight_matrix(s64 error,struct core_info* cinfo ){
     kernel_fpu_end();
     
 
-    char buf[HIST_SIZE][51]={0};
-    char buf2[HIST_SIZE][51]={0};
-    for (u8 i = 0; i < HIST_SIZE; i++){
-        print_double(buf[i],cinfo->weight_matrix[i]);
-        // print_double(buf2[i],product[i]);
-    }
+    // char buf[HIST_SIZE][51]={0};    
+    // for (u8 i = 0; i < HIST_SIZE; i++){
+    //     print_double(buf[i],cinfo->weight_matrix[i]);
+        
+    // }
 
-    if(error < cinfo->prev_err){
-        cinfo->prev_err = error;
-        memcpy(cinfo->best_weight_matrix, cinfo->weight_matrix, sizeof(cinfo->best_weight_matrix));
-        trace_printk("\n CPU(%u) | best err = %llu\n",
-                 cinfo->cpu_id,
-                 cinfo->prev_err);
-    }
-
-
-    trace_printk("\n CPU(%u) | Weights ( %s %s %s %s %s) \n",
-                 cinfo->cpu_id,
-                 buf[0],buf[1],buf[2],buf[3], buf[4]);
+    // trace_printk("\n CPU(%u) | Weights ( %s %s %s %s %s) \n",
+    //              cinfo->cpu_id,
+    //              buf[0],buf[1],buf[2],buf[3], buf[4]);
 
 #if 0
     // trace_printk("\n CPU(%u)| read_event_hist( %llu, %llu, %llu, %llu, %llu)|ri=%u |\n error=%lld | norm_sq=%llu\n",
@@ -163,12 +118,10 @@ update_weight_matrix(s64 error,struct core_info* cinfo ){
 }
 
 void init_weight_matrix(struct core_info *cinfo){
-//    const double init_weights[HIST_SIZE]={0.17017401, 0.19412817, 0.17890527, 0.21347153, 0.25384151};
     const double init_weights[HIST_SIZE]={0.1, 0.1, 0.1, 0.1, 0.1};
 
     for(u8 i =0 ; i < HIST_SIZE; i++){
-        cinfo->weight_matrix[i] = init_weights[i];
-        cinfo->best_weight_matrix[i] = init_weights[i];
+        cinfo->weight_matrix[i] = init_weights[i];    
     }
-    cinfo->prev_err = 1000;
+    
 }
