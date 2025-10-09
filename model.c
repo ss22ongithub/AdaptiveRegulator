@@ -9,7 +9,11 @@ void update_weight_matrix(s64 error, struct core_info *cinfo );
 
 double avg(const u64 * f , u8 len );
 void init_weight_matrix(struct core_info *cinfo);
-const double  LRATE = 0.000001;
+double  LRATE = 0.000001;
+
+void increase_learning_rate(s32 factor);
+void decrease_learning_rate(s32 factor);
+void reset_learning_rate(void);
 
 
 
@@ -124,4 +128,20 @@ void init_weight_matrix(struct core_info *cinfo){
         cinfo->weight_matrix[i] = init_weights[i];    
     }
     
+}
+
+void increase_learning_rate(s32 factor){
+    kernel_fpu_begin();
+    LRATE = LRATE * factor;
+    kernel_fpu_end();
+}
+
+void decrease_learning_rate(s32 factor){
+    kernel_fpu_begin();
+    LRATE = LRATE / factor;
+    kernel_fpu_end();
+}
+
+void reset_learning_rate(void){
+    LRATE = 0.000001;
 }

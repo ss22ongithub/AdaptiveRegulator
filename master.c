@@ -17,15 +17,19 @@ static void unthrottle( u8 cpu_id) __attribute__((unused));
 extern u64 estimate(u64* feat, u8 feat_len, double *wm, u8 wm_len, u8 index);
 extern void update_weight_matrix(s64 error,struct core_info* cinfo );
 extern u32  get_regulation_time(void);
-void init_weight_matrix(struct core_info *cinfo);
+extern void init_weight_matrix(struct core_info *cinfo);
+extern void increase_learning_rate(s32 factor);
+extern void decrease_learning_rate(s32 factor);
+extern void reset_learning_rate(void);
+
 
 
 extern u64 g_bw_intial_setpoint_mb[MAX_NO_CPUS+1]; /*Statically defined initial / min Bandwidth in MB/s */
 extern u64 g_bw_max_mb[MAX_NO_CPUS+1];/*Statically defined max Bandwidth per core in MB/s */
 
 
-//TODO: move to util 
-
+//TODO: move to util
+void print_double(char* buf, double value);
 #define precision 8
 #define double_len (precision + 3)
 void print_double(char* buf, double value)
@@ -161,19 +165,24 @@ static int master_thread_func(void * data) {
                                                      cinfo->weight_matrix,
                                                      sizeof(cinfo->weight_matrix)/sizeof(cinfo->weight_matrix[0]),
                                                      cinfo->ri) + g_bw_intial_setpoint_mb[cpu_id];
-                    
+
+                    s64 neg_est = 0;
                     if(cinfo->next_estimate < 0){
 						trace_printk("CPU(%u): Negative Estimate=%lld \n",cpu_id,cinfo->next_estimate);
+                        neg_est=cinfo->next_estimate;
                         //reset the weights
-                        init_weight_matrix(cinfo);
-                        continue;
+                        //init_weight_matrix(cinfo);
+                        decrease_learning_rate(10);
+                        cinfo->next_estimate = cinfo->g_read_count_used * 2;
+                    } else {
+                        reset_learning_rate();
                     }
 					
-                    //TODO: When estimate crosses a thrhold 
-                    // if (cinfo->next_estimate > g_bw_max_mb[cpu_id]){
-					// 	trace_printk("CPU(%u): Estimated(%u) = %lld > Max Limit \n",cpu_id, cinfo->next_estimate);
-					// 	cinfo->next_estimate = g_bw_max_mb[cpu_id];
-					// }
+                    /* TODO: When estimate crosses a thrhold */
+                    /* if (cinfo->next_estimate > g_bw_max_mb[cpu_id]){
+					 	trace_printk("CPU(%u): Estimated(%u) = %lld > Max Limit \n",cpu_id, cinfo->next_estimate);
+					 	cinfo->next_estimate = g_bw_max_mb[cpu_id];
+					 }*/
 
 
                     atomic64_set(&cinfo->budget_est, convert_mb_to_events(cinfo->next_estimate));
@@ -186,14 +195,13 @@ static int master_thread_func(void * data) {
                         print_double(buf[i],cinfo->weight_matrix[i]);
                     }
 
-
                     (cinfo->ri)++;
                     cinfo->ri = (cinfo->ri == HIST_SIZE)? 0:cinfo->ri;
-                    trace_printk("CPU(%u):Used=%llu nxt_est=%lld err=%lld w0=%s w1=%s w2=%s w3=%s w4=%s\n",
+                    trace_printk("CPU(%u):Used=%llu nxt_est=%lld err=%lld neg_est=%lld w0=%s w1=%s w2=%s w3=%s w4=%s\n",
                                  cpu_id,
                                  cinfo->g_read_count_used,
                                  cinfo->next_estimate,
-                                 error,
+                                 error, neg_est,
                                  buf[0],buf[1],buf[2],buf[3], buf[4]);
                     cinfo->prev_estimate=cinfo->next_estimate;
                     break;
