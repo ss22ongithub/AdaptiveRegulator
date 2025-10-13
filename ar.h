@@ -1,8 +1,6 @@
 #if !defined AR_H
 #define AR_H
 
-// TODO: CHANGE AR_SW_SIZE IN AR_DEBUGFS.C AS WELL
-#define SLIDING_WINDOW_SIZE 25
 #define HIST_SIZE 5
 #define MAX_NO_CPUS 4
 
