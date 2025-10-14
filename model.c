@@ -145,3 +145,18 @@ void decrease_learning_rate(s32 factor){
 void reset_learning_rate(void){
     LRATE = 0.000001;
 }
+
+void set_learning_rate(double learning_rate){
+    LRATE = learning_rate;
+}
+
+void normalize_weight_matrix(struct core_info *cinfo){
+     kernel_fpu_begin();
+
+    for(u8 i =0 ; i < HIST_SIZE; i++){
+
+        cinfo->weight_matrix[i] = cinfo->weight_matrix[i]/2;   
+    }
+     kernel_fpu_end();
+
+}

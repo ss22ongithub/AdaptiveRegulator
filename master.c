@@ -21,7 +21,7 @@ extern void init_weight_matrix(struct core_info *cinfo);
 extern void increase_learning_rate(s32 factor);
 extern void decrease_learning_rate(s32 factor);
 extern void reset_learning_rate(void);
-
+extern void normalize_weight_matrix(struct core_info *cinfo);
 
 
 extern u64 g_bw_intial_setpoint_mb[MAX_NO_CPUS+1]; /*Statically defined initial / min Bandwidth in MB/s */
@@ -142,6 +142,7 @@ static int master_thread_func(void * data) {
         	pr_info("Stopping thread %s\n",__func__);
             break;
         }
+        
         for_each_online_cpu(cpu_id){
             switch(cpu_id){
                 case 1:
@@ -160,6 +161,7 @@ static int master_thread_func(void * data) {
                                                     cinfo->g_read_count_old;
 
                     cinfo->read_event_hist[cinfo->ri] = cinfo->g_read_count_used;
+                    
                     cinfo->next_estimate = estimate( cinfo->read_event_hist,
                                                      sizeof(cinfo->read_event_hist)/sizeof(cinfo->read_event_hist[0]),
                                                      cinfo->weight_matrix,
@@ -168,14 +170,11 @@ static int master_thread_func(void * data) {
 
                     s64 neg_est = 0;
                     if(cinfo->next_estimate < 0){
-						trace_printk("CPU(%u): Negative Estimate=%lld \n",cpu_id,cinfo->next_estimate);
-                        neg_est=cinfo->next_estimate;
-                        //reset the weights
-                        //init_weight_matrix(cinfo);
-                        decrease_learning_rate(10);
-                        cinfo->next_estimate = cinfo->g_read_count_used * 2;
-                    } else {
-                        reset_learning_rate();
+
+						trace_printk("CPU(%u): Negative Estimate=%lld \n",cpu_id,cinfo->next_estimate);                        
+                        neg_est=cinfo->next_estimate;  
+                        normalize_weight_matrix(cinfo);
+                        continue;
                     }
 					
                     /* TODO: When estimate crosses a thrhold */
@@ -192,7 +191,9 @@ static int master_thread_func(void * data) {
 
                     char buf[HIST_SIZE][51]={0};    
                         for (u8 i = 0; i < HIST_SIZE; i++){
+                        kernel_fpu_begin();
                         print_double(buf[i],cinfo->weight_matrix[i]);
+                        kernel_fpu_end();
                     }
 
                     (cinfo->ri)++;
