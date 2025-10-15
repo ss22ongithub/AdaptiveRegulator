@@ -38,18 +38,18 @@ struct core_info {
   // Computed by master core
   atomic64_t budget_est;
   /* Each core has an array of weights to generate the prediction */
-
   double weight_matrix [HIST_SIZE];
-  
+
   s64 next_estimate;
   s64 prev_estimate;
   
 };
 
 struct core_info *get_core_info(u8 cpu_id);
-void start_regulation(u8 cpu_id);
+bool start_regulation(u8 cpu_id);
 void stop_regulation(u8 cpu_id);
-
+void stop_perf_counters(u8 cpu_id);
+bool start_perf_counters(u8 cpu_id);
 
 struct bw_distribution {
   u32 time;

@@ -8,6 +8,7 @@
  */
 
 
+
 /**************************************************************************
  * Included Files
  **************************************************************************/
@@ -93,7 +94,7 @@ struct core_info* get_core_info(u8 cpu_id){
 
 static void __start_timer_on_cpu(void* cpu)
 {
-    u8 cpu_id = (u8)cpu;
+    u8 cpu_id = (u8)(uintptr_t)cpu;
     struct core_info* cinfo = get_core_info(cpu_id);
     BUG_ON(!cinfo);
 
@@ -221,15 +222,6 @@ static int  setup_cpu_info(const u8 cpu_id){
     cinfo->cpu_id = cpu_id;
 
 
-    cinfo->read_event =  init_counter(cinfo->cpu_id,
-                                     convert_mb_to_events(g_bw_intial_setpoint_mb[cpu_id]),
-                                     g_read_counter_id,
-                                     read_event_overflow_callback);
-    if (cinfo->read_event == NULL){
-        pr_err("Read_event %p did not allocate ", cinfo->read_event);
-        return -1;
-    }
-
     /* Initialize NMI irq_work_queue */
     init_irq_work(&cinfo->read_irq_work, ar_handle_read_overflow);
 
@@ -310,30 +302,65 @@ static void deinitialize_cpu_info( const u8 cpu_id){
     pr_info("%s:Exit",__func__ );
 }
 
-void start_regulation(u8 cpu_id){
+bool start_perf_counters(u8 cpu_id){
+    struct core_info* cinfo = get_core_info(cpu_id);
+    BUG_ON(cinfo==NULL);
+    cinfo->read_event =  init_counter(cinfo->cpu_id,
+                                      convert_mb_to_events(g_bw_intial_setpoint_mb[cpu_id]),
+                                      g_read_counter_id,
+                                      NULL);
+    if (cinfo->read_event == NULL){
+        pr_err("Read_event %p did not allocate ", cinfo->read_event);
+        return false;
+    }
+
+    /* Enable perf event */
+
+    enable_event(cinfo->read_event);
+    pr_info("Read event started");
+    return true;
+}
+
+void stop_perf_counters(u8 cpu_id){
+    struct core_info* cinfo = get_core_info(cpu_id);
+    BUG_ON(cinfo==NULL);
+    /* Disable perf event */
+    disable_event(cinfo->read_event);
+    pr_info("Read event stopped");
+}
+
+bool start_regulation(u8 cpu_id){
     struct core_info* cinfo = get_core_info(cpu_id);
     BUG_ON(cinfo==NULL);
     cinfo->next_estimate=0;
     cinfo->prev_estimate=0;
-
-    /* Enable perf event */
-    enable_event(cinfo->read_event);
+    /* Cleanup the exiting perf counters and recreate the perf counters.
+       This time we register the callback */
+    disable_event(cinfo->read_event);
+    cinfo->read_event =  init_counter(cinfo->cpu_id,
+                                      convert_mb_to_events(g_bw_intial_setpoint_mb[cpu_id]),
+                                      g_read_counter_id,
+                                      read_event_overflow_callback);
+    if (cinfo->read_event == NULL){
+        pr_err("Read_event %p did not allocate ", cinfo->read_event);
+        return false;
+    }
 
     /* Start the timer on the specific core*/
-    smp_call_function_single(cpu_id,__start_timer_on_cpu,(void*)cpu_id,false);
+    smp_call_function_single(cpu_id,__start_timer_on_cpu,(void*)(long)cpu_id,false);
     pr_info("%s: Exit: (CPU %u)",__func__,cpu_id );
+    return true;
 }
 
 void stop_regulation(u8 cpu_id){
     struct core_info* cinfo = get_core_info(cpu_id);
     BUG_ON(cinfo==NULL);
 
-    /* Disable perf event */
-    perf_event_disable(cinfo->read_event);
-
     /* Stop the timer running on the specific core. Even if the timer
      is pinned to a core , it can be cancelled from any other core*/
+    disable_event(cinfo->read_event);
     hrtimer_cancel(&cinfo->reg_timer);
+
     pr_info("%s: Exit: (CPU %u)",__func__,cpu_id );
 }
 /**************************************************************************************************************************

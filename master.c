@@ -97,7 +97,6 @@ static int master_thread_func(void * data) {
 					// 	cinfo->next_estimate = g_bw_max_mb[cpu_id];
 					// }
 
-
                     atomic64_set(&cinfo->budget_est, convert_mb_to_events(cinfo->next_estimate));
 
                     s64 error = cinfo->g_read_count_used - cinfo->prev_estimate;

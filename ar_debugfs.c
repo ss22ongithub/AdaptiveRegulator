@@ -26,6 +26,7 @@
 static u32 ar_regulation_time_ms = 1; //ms, default 1000ms
 static u32 ar_observation_time_ms = 1000;
 atomic_t enable_reg; // Memory regulation enabled or disabled via debugfs
+atomic_t enable_perf_counters; // Perf counters start/stop via debugfs
 static struct dentry *ar_dir = NULL;
 
 /****************************************
@@ -136,6 +137,7 @@ static ssize_t ar_enable_reg_write(struct file *filp,
     atomic_set(&enable_reg,(user_value?true:false) );
 
     u8 cpu_id;
+    bool started= false;
     for_each_online_cpu(cpu_id){
         switch(cpu_id){
             case 1:
@@ -143,7 +145,7 @@ static ssize_t ar_enable_reg_write(struct file *filp,
             case 3:
             case 4:
                 if (user_value){
-                    start_regulation(cpu_id);
+                    started  = start_regulation(cpu_id);
                 }else{
                     stop_regulation(cpu_id);
                 }
@@ -151,8 +153,10 @@ static ssize_t ar_enable_reg_write(struct file *filp,
             default: continue;
         }
     }
+    if (started){
+        pr_info("Regulation %s",(user_value?"Enabled":"Disabled"));
+    }
 
-    pr_info("Regulation %s",(user_value?"Enabled":"Disabled"));
     return cnt;
 }
 
@@ -167,6 +171,74 @@ static int ar_enable_reg_open(struct inode *inode, struct file *filp)
 {
     return single_open(filp,ar_enable_reg_read , NULL);
 }
+/******************************************************
+ Fops functions for enable/disable perf counters
+******************************************************/
+static ssize_t ar_enable_perf_counters_write(struct file *filp,
+                                   const char __user *ubuf,size_t cnt, loff_t *ppos) {
+    char buf[BUF_SIZE];
+    memset(buf,sizeof(buf),0);
+    u8 user_value = false ;
+
+    if (copy_from_user(&buf, ubuf, (cnt > BUF_SIZE) ? BUF_SIZE: cnt) != 0)
+        return 0;
+
+    pr_info("%s: Received %s",__func__,buf);
+
+    int ret = kstrtou8(buf, 10, &user_value);
+
+    if (ret || (user_value > 1) ){
+        pr_err("%s: Failed to update: Wrong value %u (error:%d)",__func__,user_value,ret);
+        return -EINVAL;
+    }
+
+    if ( atomic_read(&enable_perf_counters) == user_value ){
+        pr_info("Regulation %s",(user_value?"Enabled":"Disabled"));
+        return cnt;
+    }
+
+    atomic_set(&enable_perf_counters,(user_value?true:false) );
+
+    u8 cpu_id;
+    bool started =  false;
+    for_each_online_cpu(cpu_id){
+            switch(cpu_id){
+                case 1:
+                case 2:
+                case 3:
+                case 4:
+                    if (user_value){
+                        started = start_perf_counters(cpu_id);
+                    }else{
+                        stop_perf_counters(cpu_id);
+                    }
+                break;
+                default: continue;
+            }
+    }
+
+    if (started){
+        pr_info("Perf counters %s",(user_value?"Enabled":"Disabled"));
+        return cnt;
+    }else {
+        return 0;
+    }
+
+
+}
+
+static int ar_enable_perf_counters_read(struct seq_file *m, void *v)
+{
+    int tmp = atomic_read(&enable_perf_counters);
+    seq_printf(m, "%u \n",tmp);
+    return 0;
+}
+
+static int ar_enable_perf_counters_open(struct inode *inode, struct file *filp)
+{
+    return single_open(filp,ar_enable_perf_counters_read , NULL);
+}
+
 /****************************************
  * debug Fops 
  ****************************************/
@@ -194,6 +266,14 @@ static const struct file_operations ar_enable_reg = {
     .release    = single_release,
 };
 
+static const struct file_operations ar_enable_perf_counters = {
+        .open       = ar_enable_perf_counters_open,
+        .write      = ar_enable_perf_counters_write,
+        .read       = seq_read,
+        .release    = single_release,
+};
+
+
 int ar_init_debugfs(void)
 {
 
@@ -205,6 +285,8 @@ int ar_init_debugfs(void)
                 &ar_obs_interval_fops);
     debugfs_create_file("enable_regulation", 0444, ar_dir, NULL,
                         &ar_enable_reg);
+    debugfs_create_file("enable_counters", 0444, ar_dir, NULL,
+                        &ar_enable_perf_counters);
     return 0;
 }
 

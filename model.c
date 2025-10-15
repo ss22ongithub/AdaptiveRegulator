@@ -127,9 +127,7 @@ update_weight_matrix(s64 error,struct core_info* cinfo ){
 }
 
 void initialize_weight_matrix(struct core_info *cinfo){
-    const double init_weights[HIST_SIZE]={0.1, 0.1, 0.1, 0.1, 0.1};
-
     for(u8 i =0 ; i < HIST_SIZE; i++){
-        cinfo->weight_matrix[i] = init_weights[i];    
+        cinfo->weight_matrix[i] = 0.1;
     }
 }
