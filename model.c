@@ -3,7 +3,7 @@
 #include "model.h"
 /**********************  Static Function Prototypes **********************************************/
 static double lms_predict(const u64* feat, u8 feat_len,double *wm, u8 wm_len, u8 ri);
-static double avg(const u64 * f , u8 len );
+//static double avg(const u64 * f , u8 len );
 /**********************  Static  Function Prototypes **********************************************/
 
 
@@ -33,6 +33,7 @@ double lms_predict(const u64* feat, u8 feat_len,double *wm, u8 wm_len, u8 ri){
     return sum;
 }
 
+/*
 double avg(const u64 * f , u8 len ){
     double sum = 0.0f;
     u8 i = 0;
@@ -44,7 +45,7 @@ double avg(const u64 * f , u8 len ){
     }
     return (sum/len);
 }
-
+*/
 
 u64 estimate(u64* feat, u8 feat_len, double *wm, u8 wm_len, u8 index) {
 
