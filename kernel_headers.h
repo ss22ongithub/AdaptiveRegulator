@@ -5,6 +5,8 @@
 #ifndef ADAPTIVEREGULATOR_KERNEL_HEADERS_H
 #define ADAPTIVEREGULATOR_KERNEL_HEADERS_H
 
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/version.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -44,6 +46,6 @@
 #endif
 #include <linux/sched.h>
 
-#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 
 #endif //ADAPTIVEREGULATOR_KERNEL_HEADERS_H

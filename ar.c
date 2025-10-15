@@ -93,7 +93,7 @@ struct core_info* get_core_info(u8 cpu_id){
 
 static void __start_timer_on_cpu(void* cpu)
 {
-    u8 cpu_id = (u8)cpu;
+    u8 cpu_id = (u8)(uintptr_t)cpu;
     struct core_info* cinfo = get_core_info(cpu_id);
     BUG_ON(!cinfo);
 
@@ -320,7 +320,7 @@ void start_regulation(u8 cpu_id){
     enable_event(cinfo->read_event);
 
     /* Start the timer on the specific core*/
-    smp_call_function_single(cpu_id,__start_timer_on_cpu,(void*)cpu_id,false);
+    smp_call_function_single(cpu_id,__start_timer_on_cpu,(void*)(long)cpu_id,false);
     pr_info("%s: Exit: (CPU %u)",__func__,cpu_id );
 }
 
