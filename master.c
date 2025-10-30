@@ -86,8 +86,8 @@ static int master_thread_func(void * data) {
                     
                     if(cinfo->next_estimate < 0){
 						trace_printk("CPU(%u): Negative Estimate=%lld \n",cpu_id,cinfo->next_estimate);
-                        //reset the weights
-                        initialize_weight_matrix(cinfo);
+                        //scale down the weights
+                        initialize_weight_matrix(cinfo, false);
                         continue;
                     }
 					

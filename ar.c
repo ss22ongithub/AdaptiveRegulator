@@ -272,7 +272,7 @@ static int  setup_cpu_info(const u8 cpu_id){
     /sys/kernel/debug/ar/enable_regulation to 1 ****/
 
     /* Initiialize weight matrix to predefined values */
-    initialize_weight_matrix(cinfo);
+    initialize_weight_matrix(cinfo, true);
 
     pr_info("%s: Exit", __func__ );
     return 0;

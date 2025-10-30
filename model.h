@@ -7,7 +7,7 @@
 
 
 #define INITIAL_WEIGHT  0.1f
-void initialize_weight_matrix(struct core_info *cinfo);
+void initialize_weight_matrix(struct core_info *cinfo, bool first);
 void update_weight_matrix(s64 error, struct core_info *cinfo );
 u64 estimate(u64* feat, u8 feat_len, double *wm, u8 wm_len, u8 index);
 #endif //ADAPTIVEREGULATOR_MODEL_H

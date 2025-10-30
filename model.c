@@ -126,10 +126,12 @@ update_weight_matrix(s64 error,struct core_info* cinfo ){
 
 }
 
-void initialize_weight_matrix(struct core_info *cinfo){
-    const double init_weights[HIST_SIZE]={0.1, 0.1, 0.1, 0.1, 0.1};
+void initialize_weight_matrix(struct core_info *cinfo, bool first){
 
-    for(u8 i =0 ; i < HIST_SIZE; i++){
-        cinfo->weight_matrix[i] = init_weights[i];    
-    }
+    kernel_fpu_begin();
+  	for(u8 i =0 ; i < HIST_SIZE; i++){
+       	cinfo->weight_matrix[i] = (first)? INITIAL_WEIGHT : (cinfo->weight_matrix[i])/2;
+  	}
+    kernel_fpu_end();
+
 }
