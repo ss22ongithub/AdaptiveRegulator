@@ -55,6 +55,7 @@ u64 convert_events_to_mb(u64 events)
     int divisor = get_regulation_time()*1024*1024;
     int mb = div64_u64(events*CACHE_LINE_SIZE*1000 + (divisor-1), divisor);
     return mb;
+	/* The bandwidth computed here is has units Mib/msec but it is scaled by a factor of 10000.  */
 }
 
 u64 convert_mb_to_events(int mb)
