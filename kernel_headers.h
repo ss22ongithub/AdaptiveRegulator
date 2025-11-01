@@ -46,6 +46,11 @@
 #endif
 #include <linux/sched.h>
 
+#if defined CONFIG_DEBUG_AR
+#define AR_DEBUG(fmt, ...) trace_printk(pr_fmt(fmt), ##__VA_ARGS__)
+#else
+#define AR_DEBUG(fmt, ...) do { } while (0)
+#endif
 
 
 #endif //ADAPTIVEREGULATOR_KERNEL_HEADERS_H
