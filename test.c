@@ -103,7 +103,7 @@ static struct task_struct* thread_kt1 = NULL;
 //
 //    while (!kthread_should_stop() ) {
 //
-//        trace_printk("Wait for Event\n");
+//        AR_DEBUG("Wait for Event\n");
 ////        wait_event_interruptible( evt,
 ////                     cinfo->throttled_task ||
 ////                     kthread_should_stop());
@@ -113,7 +113,7 @@ static struct task_struct* thread_kt1 = NULL;
 //            break;
 //        }
 //
-////        trace_printk("Throttling...\n");
+////        AR_DEBUG("Throttling...\n");
 ////
 ////        if (cpu_online(cpu_id)) {
 ////			set_cpu_online(cpu_id,false);

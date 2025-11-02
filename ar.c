@@ -86,6 +86,28 @@ struct core_info* get_core_info(u8 cpu_id){
 /**************************************************************************
  * Utils
  **************************************************************************/
+/* WARNING: This function should be kept strictly re-entrant */
+void __throttle( void* cpu )
+{
+    /*Note : Ensure cinfo should always refer to the regulated cores */
+    struct core_info* cinfo = (struct core_info*)cpu;
+    bool t = atomic_read(&cinfo->throttler_task);
+
+    AR_DEBUG("CPU(%d): t = %d\n", cinfo->cpu_id, t);
+    if ( t ) {
+        AR_DEBUG("Already in throttled state");
+        return;
+    }
+    atomic_set(&cinfo->throttler_task,true);
+    wake_up_interruptible(&cinfo->throttle_evt);
+}
+
+/* WARNING: This function should be kept strictly re-entrant */
+void __unthrottle( void* cpu) {
+    /* Note : Ensure cinfo should always refer to the regulated cores */
+    struct core_info* cinfo = (struct core_info*)cpu;
+    atomic_set(&cinfo->throttler_task,false);
+}
 
 
 
@@ -111,7 +133,7 @@ static void __start_timer_on_cpu(void* cpu)
 static enum hrtimer_restart new_ar_regu_timer_callback(struct hrtimer *timer)
 {
     u8 cpu_id = smp_processor_id();
-//    trace_printk("\n");
+//    AR_DEBUG("\n");
 
     struct core_info *cinfo =  get_core_info(cpu_id);
     BUG_ON(!cinfo);
@@ -124,7 +146,7 @@ static enum hrtimer_restart new_ar_regu_timer_callback(struct hrtimer *timer)
 
     u64 read_event_new_budget = atomic64_read(&cinfo->budget_est);
     local64_set(&cinfo->read_event->hw.period_left, read_event_new_budget);
-    trace_printk("CPU(%u):New budget: %llu\n",cpu_id,read_event_new_budget);
+    AR_DEBUG("CPU(%u):New budget: %llu\n",cpu_id,read_event_new_budget);
 
     //un-throttle if the core is in throttle state
     atomic_set(&cinfo->throttler_task,false);
@@ -149,16 +171,16 @@ static int throttler_task_func1(void * data){
 
     while (!kthread_should_stop() && cpu_online(cpu_id)) {
 
-        trace_printk("CPU(%d):Waiting for Event\n", cpu_id);
+        AR_DEBUG("CPU(%d):Waiting for Event\n", cpu_id);
         wait_event_interruptible(cinfo->throttle_evt,
                                  atomic_read(&cinfo->throttler_task)
                                  || kthread_should_stop() );
-        trace_printk("CPU(%d):Got Event\n", cpu_id);
+        AR_DEBUG("CPU(%d):Got Event\n", cpu_id);
 
         if (kthread_should_stop())
             break;
 
-        trace_printk("CPU(%d):Throttling...\n",cpu_id);
+        AR_DEBUG("CPU(%d):Throttling...\n",cpu_id);
        while (atomic_read(&cinfo->throttler_task)
                  && !kthread_should_stop())
        {
@@ -179,7 +201,7 @@ static void read_event_overflow_callback(struct perf_event *event,
 {
     u8 cpu_id = smp_processor_id();
     if (cpu_id == 0){
-        trace_printk("%s: CPU(%d) not expected here \n",__func__,cpu_id);
+        AR_DEBUG("%s: CPU(%d) not expected here \n",__func__,cpu_id);
         return;
     }
 
@@ -192,12 +214,12 @@ static void ar_handle_read_overflow(struct irq_work *entry)
 {
     u8 cpu_id = smp_processor_id();
     if (cpu_id == 0){
-        trace_printk("%s: CPU(%d) not expected here\n",__func__,cpu_id);
+        AR_DEBUG("%s: CPU(%d) not expected here\n",__func__,cpu_id);
         return;
     }
 
     BUG_ON(in_nmi() || !in_irq());
-    trace_printk("\n");
+    AR_DEBUG("\n");
 
     struct core_info *cinfo = get_core_info(cpu_id);
     BUG_ON(!cinfo);

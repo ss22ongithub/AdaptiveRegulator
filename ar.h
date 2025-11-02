@@ -6,6 +6,7 @@
 
 /* Each CPU core's info */
 struct core_info {
+    bool thr;
   u64 g_read_count_new;
   u64 g_read_count_old;
   u64 g_read_count_used;
@@ -56,4 +57,6 @@ struct bw_distribution {
   u32 rd_avg_bw;
 };
 
+void __throttle( void* cpu );
+void __unthrottle( void* cpu );
 #endif
