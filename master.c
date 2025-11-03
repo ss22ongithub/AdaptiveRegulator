@@ -32,6 +32,7 @@ static int master_thread_func(void * data) {
 
 
         for_each_online_cpu(cpu_id){
+            s64 bw_total_req = 0;
             switch(cpu_id){
                 case 1:
                 case 2:
@@ -47,6 +48,8 @@ static int master_thread_func(void * data) {
                     cinfo->g_read_count_new = convert_events_to_mb( perf_event_count(read_event)) ;
                     cinfo->g_read_count_used = cinfo->g_read_count_new -
                                                cinfo->g_read_count_old;
+
+                    bw_total_req += cinfo->g_read_count_used;
 
                     cinfo->read_event_hist[cinfo->ri] = cinfo->g_read_count_used;
                     cinfo->next_estimate = estimate( cinfo->read_event_hist,
@@ -64,40 +67,44 @@ static int master_thread_func(void * data) {
 
                     //TODO: When estimate crosses a thrhold
                     // if (cinfo->next_estimate > g_bw_max_mb[cpu_id]){
-                    // 	trace_printk("CPU(%u): Estimated(%u) = %lld > Max Limit \n",cpu_id, cinfo->next_estimate);
+                    // 	AR_DEBUG("CPU(%u): Estimated(%u) = %lld > Max Limit \n",cpu_id, cinfo->next_estimate);
                     // 	cinfo->next_estimate = g_bw_max_mb[cpu_id];
                     // }
-                    
-
-
-                    atomic64_set(&cinfo->budget_est, convert_mb_to_events(cinfo->next_estimate));
+                    s64 allocation = 0 ;
+                    if (bw_total_req >= BW_TOTAL_AVAILABLE){
+                        allocation = (cinfo->next_estimate/bw_total_req)* BW_TOTAL_AVAILABLE;
+                    }else {
+                        allocation = cinfo->next_estimate;
+                    }
+                    atomic64_set(&cinfo->budget_est, convert_mb_to_events(allocation));
 
                     s64 error = cinfo->g_read_count_used - cinfo->prev_estimate;
                     update_weight_matrix(error,cinfo);
 
+#if defined(AR_DEBUG)
                     char buf[HIST_SIZE][51]={0};
                     for (u8 i = 0; i < HIST_SIZE; i++){
                         kernel_fpu_begin();
                         print_double(buf[i],cinfo->weight_matrix[i]);
                         kernel_fpu_end();
                     }
-
-
+#endif
                     (cinfo->ri)++;
                     cinfo->ri = (cinfo->ri == HIST_SIZE)? 0:cinfo->ri;
-                    AR_DEBUG("CPU(%u):Used=%llu nxt_est=%lld err=%lld w0=%s w1=%s w2=%s w3=%s w4=%s\n",
+                    AR_DEBUG("CPU(%u):Used=%llu nxt_est=%lld err=%lld w0=%s w1=%s w2=%s w3=%s w4=%s treq=%lld alloc=%lld\n",
                                  cpu_id,
                                  cinfo->g_read_count_used,
                                  cinfo->next_estimate,
                                  error,
-                                 buf[0],buf[1],buf[2],buf[3], buf[4]);
+                                 buf[0],buf[1],buf[2],buf[3], buf[4],
+                                 bw_total_req,allocation);
                     cinfo->prev_estimate=cinfo->next_estimate;
                     break;
                 default:
                     continue;
             }
         }
-       msleep(1000);
+       msleep(1);
     }
 
     pr_info("%s: Exit",__func__);

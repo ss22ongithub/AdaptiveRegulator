@@ -6,7 +6,7 @@ MODULE_NAME=areg
 # Enable FPU
 ccflags-y := -mhard-float -msse
 
-# Enable AR_DEBUG logging
+# Enable debug traces
 ccflags-y += -DCONFIG_DEBUG_AR
 
 obj-m += $(MODULE_NAME).o

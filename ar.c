@@ -93,7 +93,7 @@ void __throttle( void* cpu )
     struct core_info* cinfo = (struct core_info*)cpu;
     bool t = atomic_read(&cinfo->throttler_task);
 
-    AR_DEBUG("CPU(%d): t = %d\n", cinfo->cpu_id, t);
+    AR_DEBUG("CPU(%d): throtle state = %d\n", cinfo->cpu_id, t);
     if ( t ) {
         AR_DEBUG("Already in throttled state");
         return;
