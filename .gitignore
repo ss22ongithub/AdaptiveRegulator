@@ -20,7 +20,7 @@ modules.order
 traces/
 dataprocessing/
 scripts/fg_bg.csv
-send_files.h
+send_files.sh
 tmp/
 
 
