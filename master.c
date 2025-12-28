@@ -43,11 +43,16 @@ static int master_thread_func(void * data) {
                     WARN_ON(cinfo->read_event == NULL);
 
                     struct perf_event* read_event = cinfo->read_event;
+                    struct perf_event* cycles_l3miss_event = cinfo->cycles_l3miss_event;
 
                     cinfo->g_read_count_old = cinfo->g_read_count_new;
                     cinfo->g_read_count_new = convert_events_to_mb( perf_event_count(read_event)) ;
                     cinfo->g_read_count_used = cinfo->g_read_count_new -
                                                cinfo->g_read_count_old;
+
+                    u64 cycles_l3miss_count = perf_event_count(cycles_l3miss_event);
+
+
 
                     bw_total_req += cinfo->g_read_count_used;
 
@@ -91,13 +96,15 @@ static int master_thread_func(void * data) {
 #endif
                     (cinfo->ri)++;
                     cinfo->ri = (cinfo->ri == HIST_SIZE)? 0:cinfo->ri;
-                    AR_DEBUG("CPU(%u):Used=%llu nxt_est=%lld err=%lld w0=%s w1=%s w2=%s w3=%s w4=%s treq=%lld alloc=%lld\n",
+
+                    AR_DEBUG("CPU(%u):Used=%llu nxt_est=%lld err=%lld w0=%s w1=%s w2=%s w3=%s w4=%s treq=%lld alloc=%lld cycles_l3miss_count=%llu \n",
                                  cpu_id,
                                  cinfo->g_read_count_used,
                                  cinfo->next_estimate,
                                  error,
                                  buf[0],buf[1],buf[2],buf[3], buf[4],
-                                 bw_total_req,allocation);
+                                 bw_total_req,allocation,
+                                 cycles_l3miss_count);
                     cinfo->prev_estimate=cinfo->next_estimate;
                     break;
                 default:

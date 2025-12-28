@@ -61,6 +61,25 @@ struct perf_event *init_counter(int cpu, int sample_period, int counter_id, void
         .exclude_kernel = 1   /* TODO: 1 mean, no kernel mode counting */
     };
 
+    /*
+     * If we are using the STALLS_L3_MISS event, we MUST set the CMask
+     * to get the correct behavior (stalls > 6 cycles).
+     */
+
+//    if (counter_id == PMU_STALL_L3_MISS_CYCLES_COUNTER_ID) {
+//    /*
+//     * This is the critical part from the Intel documentation.
+//     * We must pack all values into the 64-bit config field.
+//     *
+//     * config[ 7: 0] = EventSel (0xA3)
+//     * config[15: 8] = UMask (0x06)
+//     * config[31:24] = CMask (0x06)
+//     */
+//        sched_perf_hw_attr.config = PMU_STALL_L3_MISS_CYCLES_EVENTSEL;
+//        sched_perf_hw_attr.config |= (__u64)PMU_STALL_L3_MISS_CYCLES_UMASK << 8;
+//        sched_perf_hw_attr.config |= (__u64)PMU_STALL_L3_MISS_CYCLES_CMASK << 24;
+//    }
+
     /* Try to register using hardware perf events */
     event = perf_event_create_kernel_counter(
         &sched_perf_hw_attr,

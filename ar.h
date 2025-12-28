@@ -4,6 +4,30 @@
 #define HIST_SIZE 5
 #define MAX_NO_CPUS 4
 #define BW_TOTAL_AVAILABLE  120000 //(30000 * 4 cpus)
+
+/**************************************************************************
+ * COUNTERS Format (Umask_code - EventCode) tools/perf/pmu-events/arch/x86/)
+ **************************************************************************/
+#if defined(__aarch64__) || defined(__arm__)
+#  define PMU_LLC_MISS_COUNTER_ID 0x17   // LINE_REFILL
+#  define PMU_LLC_WB_COUNTER_ID   0x18   // LINE_WB
+#elif defined(__x86_64__) || defined(__i386__)
+#  define PMU_LLC_MISS_COUNTER_ID 0x08b0 // OFFCORE_REQUESTS.ALL_DATA_RD
+#  define PMU_LLC_WB_COUNTER_ID   0x40b0 // OFFCORE_REQUESTS.WB
+
+//CYCLE_ACTIVITY.STALLS_L3_MISS
+#  define PMU_STALL_L3_MISS_CYCLES_COUNTER_ID   0x06A3
+/*
+* Event: CYCLE_ACTIVITY.STALLS_L3_MISS
+* EventSel=A3H, UMask=06H, CMask=06H
+*/
+#define PMU_STALL_L3_MISS_CYCLES_EVENTSEL 0xA3
+#define PMU_STALL_L3_MISS_CYCLES_UMASK    0x06
+
+
+#endif
+
+
 /* Each CPU core's info */
 struct core_info {
     bool thr;
@@ -30,6 +54,7 @@ struct core_info {
   //  Bandwidth utilization parameters
   // PMC events
   struct perf_event *read_event;
+  struct perf_event *cycles_l3miss_event;
 
   // Timer related
   struct hrtimer reg_timer;

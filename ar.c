@@ -27,17 +27,7 @@
 
 
 
-/**************************************************************************
- * COUNTERS Format (Umask_code - EventCode) tools/perf/pmu-events/arch/x86/)
- **************************************************************************/
-#if defined(__aarch64__) || defined(__arm__)
-#  define PMU_LLC_MISS_COUNTER_ID 0x17   // LINE_REFILL
-#  define PMU_LLC_WB_COUNTER_ID   0x18   // LINE_WB
-#elif defined(__x86_64__) || defined(__i386__)
-#  define PMU_LLC_MISS_COUNTER_ID 0x08b0 // OFFCORE_REQUESTS.ALL_DATA_RD
-#  define PMU_LLC_WB_COUNTER_ID   0x40b0 // OFFCORE_REQUESTS.WB
-#  define PMU_STALL_L3_MISS_CYCLES_COUNTER_ID   0x06A3 //CYCLE_ACTIVITY.STALLS_L3_MISS, 
-#endif
+
 
 /**************************************************************************
  * Local Function Declarations
@@ -57,6 +47,8 @@ static enum hrtimer_restart new_ar_regu_timer_callback(struct hrtimer *timer);
  **************************************************************************/
 
 static int g_read_counter_id = PMU_LLC_MISS_COUNTER_ID;
+
+
 module_param(g_read_counter_id, hexint,  S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
 
 u64 g_bw_intial_setpoint_mb[MAX_NO_CPUS+1] = {0,1000,1000,1000,1000}; /*Pre-defined initial / min Bandwidth in MB/s */
@@ -251,6 +243,14 @@ static int  setup_cpu_info(const u8 cpu_id){
         pr_err("Read_event %p did not allocate ", cinfo->read_event);
         return -1;
     }
+    cinfo->cycles_l3miss_event = init_counter(cinfo->cpu_id,6,
+                                       PMU_STALL_L3_MISS_CYCLES_COUNTER_ID,
+                                       NULL);
+
+    if (cinfo->cycles_l3miss_event == NULL){
+        pr_err("Read_event %p did not allocate ", cinfo->cycles_l3miss_event);
+        return -1;
+    }
 
     /* Initialize NMI irq_work_queue */
     init_irq_work(&cinfo->read_irq_work, ar_handle_read_overflow);
@@ -340,6 +340,7 @@ void start_regulation(u8 cpu_id){
 
     /* Enable perf event */
     enable_event(cinfo->read_event);
+    enable_event(cinfo->cycles_l3miss_event);
 
     /* Start the timer on the specific core*/
     smp_call_function_single(cpu_id,__start_timer_on_cpu,(void*)(long)cpu_id,false);
@@ -352,6 +353,7 @@ void stop_regulation(u8 cpu_id){
 
     /* Disable perf event */
     perf_event_disable(cinfo->read_event);
+    perf_event_disable(cinfo->cycles_l3miss_event);
 
     /* Stop the timer running on the specific core. Even if the timer
      is pinned to a core , it can be cancelled from any other core*/
