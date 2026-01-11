@@ -1,19 +1,15 @@
 KVERSION = $(shell uname -r)
 BLDDIR= /lib/modules/$(KVERSION)/build
 
-MODULE_NAME=areg
-
-# Enable FPU
+MODULE_NAME=t
 ccflags-y := -mhard-float -msse
 
-# Enable debug traces
-ccflags-y += -DCONFIG_DEBUG_AR
-
 obj-m += $(MODULE_NAME).o
-$(MODULE_NAME)-objs := ar.o ar_debugfs.o ar_perfs.o model.o master.o utils.o
+$(MODULE_NAME)-objs := test.o #model.o random_forest_model.o
 
 all: 
 	make -C $(BLDDIR) M=$(PWD) modules
 
 clean:
 	make -C $(BLDDIR) M=$(PWD) clean
+

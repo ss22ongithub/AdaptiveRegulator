@@ -12,38 +12,46 @@
 #include <linux/version.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/init.h>
+
+/* Timer / time*/
 #include <linux/hrtimer.h>
 #include <linux/ktime.h>
+#include <linux/delay.h>
+/* CPU / SMP */
 #include <linux/smp.h> /* IPI calls */
+#include <linux/cpumask.h> //for CPU hotplugging
+/* Per CPU */
+#include <linux/percpu.h>
+#include <linux/smp.h>
+#include <linux/cpumask.h>
+
+/* IRQ processing*/
 #include <linux/irq_work.h>
 #include <linux/hardirq.h>
+#include <linux/interrupt.h>
+/*perf infrastructure framework*/
 #include <linux/perf_event.h>
-#include <linux/delay.h>
-#include <linux/debugfs.h>
-#include <linux/seq_file.h>
-#include <asm/atomic.h>
+/* Memory */
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
 #include <linux/uaccess.h>
 #include <linux/notifier.h>
+/*Threads and Process */
 #include <linux/kthread.h>
+/* Tracing / printing */
 #include <linux/printk.h>
-#include <linux/interrupt.h>
 #include <linux/trace_events.h>
-
+/* Other Misc.*/
 #include <linux/topology.h>
 #include <linux/kfifo.h>
-
-
-#include <linux/cpumask.h> //for CPU hotplugging
-
-
-#include <linux/init.h>
+#include <linux/debugfs.h>
+#include <linux/seq_file.h>
+#include <asm/atomic.h>
 #include <linux/hw_breakpoint.h>
 #include <linux/kstrtox.h>
 
-
-
+/* Scheduler*/
 #if LINUX_VERSION_CODE > KERNEL_VERSION(5, 0, 0)
 #  include <uapi/linux/sched/types.h>
 #elif LINUX_VERSION_CODE > KERNEL_VERSION(4, 13, 0)
@@ -53,7 +61,7 @@
 #endif
 #include <linux/sched.h>
 
-
+/* Adaptive regulator*/
 #include "ar_debugfs.h"
 #include "ar_perfs.h"
 #include "ar.h"
@@ -72,11 +80,7 @@ void switch_on_cpu(int cpu);
 /**************************************************************************
  * Callbacks and Handlers
  **************************************************************************/
-
-
-
-static struct task_struct* thread_kt1 = NULL;
-
+//static struct task_struct* thread_kt1 = NULL;
 //static int master_thread_func(void * data) {
 //    int cpu_id = 1;
 //    pr_info("%s: Enter",__func__);
@@ -141,36 +145,101 @@ static struct task_struct* thread_kt1 = NULL;
 //void switch_on_cpu(int cpu){
 //  	set_cpu_online(cpu,true);
 //	pr_info("%s: cpu up = %d \n",__func__,cpu);
-//}
+//
+/*
+* Define a custom structure with 2 u32 variables.
+*/
+struct my_cpu_stats {
+    u32 counter_a;
+    u32 counter_b;
+};
+
+/*
+ * Define a per-CPU instance of this structure.
+ * This creates a separate 'struct my_cpu_stats' for every CPU core.
+ */
+DEFINE_PER_CPU(struct my_cpu_stats, my_percpu_data);
+
+/*
+ * A function that runs on a specific CPU to increment its local counters
+ */
+static void increment_local_counter(void *info)
+{
+    /* * get_cpu_var() disables preemption and returns a reference
+     * to the current CPU's instance of the structure.
+     */
+    struct my_cpu_stats *local_stats = &get_cpu_var(my_percpu_data);
+
+    local_stats->counter_a++;
+    local_stats->counter_b += 10; // Increment b by 10 to show difference
+
+    pr_info("CPU[%d]: incremented A to %u, B to %u\n",
+            smp_processor_id(), local_stats->counter_a, local_stats->counter_b);
+
+    /* * put_cpu_var() re-enables preemption. Must be called after get_cpu_var.
+     */
+    put_cpu_var(my_percpu_data);
+}
+
 /**************************************************************************************************************************
  * Module main
  **************************************************************************************************************************/
 
 static int __init test_init (void ){
-    
-    pr_info("ar: Supported CPUs: %d, online_cpus: %d\n", NR_CPUS, num_online_cpus());
+    int cpu;
 
-    /* CPU0 is not hot pluggable  we use CPU 0 to run
-	    the masterthread. Also confirm  CONFIG_HOTPLUG_CPU=y
-		is enabled in the kernel  configuration
-	*/
+    pr_info("--- Per-CPU Structure Demo Start ---\n");
 
+    /* * Step 1: Initialize the structure members on all CPUs to 0
+     * We use per_cpu_ptr() to avoid "aggregate value" errors.
+     */
+    for_each_possible_cpu(cpu) {
+        struct my_cpu_stats* s =  per_cpu_ptr(&my_percpu_data,cpu);
+        s->counter_a = 0;
+        s->counter_b = 0;
+//        per_cpu_ptr(&my_percpu_data, cpu)->counter_a = 0;
+//        per_cpu_ptr(&my_percpu_data, cpu)->counter_b = 0;
+    }
 
-//    int cpu_id  = 0; //cpuid= 1,2,3 4 are reserved for BW regulation
-//    thread_kt1 = kthread_create_on_node(master_thread_func,
-//                                       (void*)NULL,
-//                                       cpu_to_node(cpu_id),
-//                                       "kcontroller/%d",cpu_id);
-//	BUG_ON(IS_ERR(thread_kt1));
-//	kthread_bind(thread_kt1, cpu_id);
-//    wake_up_process(thread_kt1);
+    /*
+     * Step 2: Increment the counters on EACH CPU.
+     * We use on_each_cpu() to run our function on all online cores.
+     */
+    on_each_cpu(increment_local_counter, NULL, 1);
 
-    extern int estimate(void);
-    estimate();
-    pr_info("Exit");
+    /*Alternatively:
+     Call increment() on all "other" processors ...*/
+    smp_call_function(increment_local_counter, NULL, 1);
+    /*... and then explicitly on the current cpu*/
+    increment_local_counter(NULL);
 
+    /*
+     * Step 3: Increment specific members just on the current CPU.
+     * We use this_cpu_ptr() to safely access members of the struct.
+     */
+    this_cpu_ptr(&my_percpu_data)->counter_a++;
+    this_cpu_ptr(&my_percpu_data)->counter_b += 100;
 
-//	switch_off_cpu(2);
+    /* Alternatively:
+     * on the current cpu */
+    struct my_cpu_stats*  this_cpu_stats = this_cpu_ptr(&my_percpu_data);
+    this_cpu_stats->counter_a++;
+    this_cpu_stats->counter_b += 100;
+
+    pr_info("CPU[%d]: manually modified local A to %u, B to %u\n",
+            smp_processor_id(),
+            this_cpu_ptr(&my_percpu_data)->counter_a,
+            this_cpu_ptr(&my_percpu_data)->counter_b);
+
+    /*
+     * Step 4: Print the final values to prove they are different.
+     */
+    pr_info("Final Values:\n");
+    for_each_online_cpu(cpu) {
+        struct my_cpu_stats *stats = per_cpu_ptr(&my_percpu_data, cpu);
+        pr_info("  CPU %d -> A: %u, B: %u\n", cpu, stats->counter_a, stats->counter_b);
+    }
+
     return 0;
 
 }
@@ -178,11 +247,7 @@ static int __init test_init (void ){
 
 static void __exit test_exit( void )
 { 
-    //Cleanup
-//	switch_on_cpu(2);
 
-//    kthread_stop(thread_kt1);
-    
 
 	pr_info("test: Module removed\n");
 	return;
