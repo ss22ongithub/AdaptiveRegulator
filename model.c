@@ -23,11 +23,11 @@ double lms_predict(const u64* feat, u8 feat_len,double *wm, u8 wm_len, u8 ri){
     int i =0;
     for (int j = ri; i < wm_len && j >= 0; i++, j--){
         sum += wm[i] * feat[j];
-//        trace_printk("wm[%d](%f) * feat[%d](%lu) = %f\n",i,wm[i],j,feat[j],wm[i] * feat[j] );
+//        AR_DEBUG("wm[%d](%f) * feat[%d](%lu) = %f\n",i,wm[i],j,feat[j],wm[i] * feat[j] );
     }
     for (int j=feat_len-1; i < wm_len && j > ri ; i++,j--) {
         sum += wm[i] * feat[j];
-//        trace_printk("wm[%d](%f) * feat[%d](%lu) = %f\n",i,wm[i],j,feat[j],wm[i] * feat[j] );
+//        AR_DEBUG("wm[%d](%f) * feat[%d](%lu) = %f\n",i,wm[i],j,feat[j],wm[i] * feat[j] );
     }
     sum+= bias;
     return sum;
@@ -57,7 +57,7 @@ u64 estimate(u64* feat, u8 feat_len, double *wm, u8 wm_len, u8 index) {
     u64 integer_part = (int)result;
     /*
         u64 fractional_part = (int)((result - integer_part) * 1000000);
-        trace_printk(" %llu.%llu \n", integer_part, fractional_part);
+        AR_DEBUG(" %llu.%llu \n", integer_part, fractional_part);
      */
     return integer_part;
 }
@@ -77,7 +77,7 @@ update_weight_matrix(s64 error,struct core_info* cinfo ){
     // Avoid Divide by zero error
     u64 norm_sq = l2_norm(cinfo->read_event_hist, HIST_SIZE);
     if ( 0 == norm_sq){
-        // trace_printk("CPU(%d): Norm Square=0, skipping weight update\n", cinfo->cpu_id);
+        // AR_DEBUG("CPU(%d): Norm Square=0, skipping weight update\n", cinfo->cpu_id);
         return;
     }
 
@@ -106,19 +106,19 @@ update_weight_matrix(s64 error,struct core_info* cinfo ){
         
     // }
 
-    // trace_printk("\n CPU(%u) | Weights ( %s %s %s %s %s) \n",
+    // AR_DEBUG("\n CPU(%u) | Weights ( %s %s %s %s %s) \n",
     //              cinfo->cpu_id,
     //              buf[0],buf[1],buf[2],buf[3], buf[4]);
 
 #if 0
-    // trace_printk("\n CPU(%u)| read_event_hist( %llu, %llu, %llu, %llu, %llu)|ri=%u |\n error=%lld | norm_sq=%llu\n",
+    // AR_DEBUG("\n CPU(%u)| read_event_hist( %llu, %llu, %llu, %llu, %llu)|ri=%u |\n error=%lld | norm_sq=%llu\n",
     //     cinfo->cpu_id,
     //     cinfo->read_event_hist[0],cinfo->read_event_hist[1],cinfo->read_event_hist[2],
     //     cinfo->read_event_hist[3],cinfo->read_event_hist[4],
     //     cinfo->ri,
     //     error, norm_sq);
     
-    // trace_printk("\n CPU(%u) | Product term ( %s %s %s %s %s) \n",
+    // AR_DEBUG("\n CPU(%u) | Product term ( %s %s %s %s %s) \n",
     //              cinfo->cpu_id,
     //              buf2[0],buf2[1],buf2[2],buf2[3], buf2[4]);
 	//

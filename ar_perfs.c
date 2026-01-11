@@ -26,7 +26,7 @@ static void llc_miss_event_irq_work_handler(struct irq_work *entry){
 //    struct core_info * cinfo = get_core_info(cpu_id);
     // s64 read_budget_used = llc_overflow_count= perf_event_count(llc_miss_read_event) - (cinfo->g_read_count_old);
 
-    // trace_printk("read_budget_used %lld\n",read_budget_used);
+    // AR_DEBUG("read_budget_used %lld\n",read_budget_used);
 
     /* Send notfication to throttle_thread  to start the throttling*/
 //    cinfo->throttler_task = current;

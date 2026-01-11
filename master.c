@@ -85,7 +85,7 @@ static int master_thread_func(void * data) {
                                                      cinfo->ri) + g_bw_intial_setpoint_mb[cpu_id];
                     
                     if(cinfo->next_estimate < 0){
-						trace_printk("CPU(%u): Negative Estimate=%lld \n",cpu_id,cinfo->next_estimate);
+						AR_DEBUG("CPU(%u): Negative Estimate=%lld \n",cpu_id,cinfo->next_estimate);
                         //scale down the weights
                         initialize_weight_matrix(cinfo, false);
                         continue;
@@ -93,7 +93,7 @@ static int master_thread_func(void * data) {
 					
                     //TODO: When estimate crosses a thrhold 
                     // if (cinfo->next_estimate > g_bw_max_mb[cpu_id]){
-					// 	trace_printk("CPU(%u): Estimated(%u) = %lld > Max Limit \n",cpu_id, cinfo->next_estimate);
+					// 	AR_DEBUG("CPU(%u): Estimated(%u) = %lld > Max Limit \n",cpu_id, cinfo->next_estimate);
 					// 	cinfo->next_estimate = g_bw_max_mb[cpu_id];
 					// }
 
@@ -113,7 +113,7 @@ static int master_thread_func(void * data) {
 
                     (cinfo->ri)++;
                     cinfo->ri = (cinfo->ri == HIST_SIZE)? 0:cinfo->ri;
-                    trace_printk("CPU(%u):Used=%llu nxt_est=%lld err=%lld w0=%s w1=%s w2=%s w3=%s w4=%s\n",
+                    AR_DEBUG("CPU(%u):Used=%llu nxt_est=%lld err=%lld w0=%s w1=%s w2=%s w3=%s w4=%s\n",
                                  cpu_id,
                                  cinfo->g_read_count_used,
                                  cinfo->next_estimate,
