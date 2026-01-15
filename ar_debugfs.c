@@ -117,7 +117,7 @@ static ssize_t ar_enable_reg_write(struct file *filp,
     u8 user_value = false ;
 
     if (copy_from_user(&buf, ubuf, (cnt > BUF_SIZE) ? BUF_SIZE: cnt) != 0)
-    return 0;
+        return 0;
 
     pr_info("%s: Received %s",__func__,buf);
 
@@ -135,21 +135,13 @@ static ssize_t ar_enable_reg_write(struct file *filp,
 
     atomic_set(&enable_reg,(user_value?true:false) );
 
-    u8 cpu_id;
-    for_each_online_cpu(cpu_id){
-        switch(cpu_id){
-            case 1:
-            case 2:
-            case 3:
-            case 4:
-                if (user_value){
-                    start_regulation(cpu_id);
-                }else{
-                    stop_regulation(cpu_id);
-                }
-                break;
-            default: continue;
-        }
+    /* Use new wrapper functions that coordinate master thread and per-core regulation */
+    if (user_value){
+        pr_info("%s: Enabling regulation for all cores",__func__);
+        start_all_regulation();
+    } else {
+        pr_info("%s: Disabling regulation for all cores",__func__);
+        stop_all_regulation();
     }
 
     pr_info("Regulation %s",(user_value?"Enabled":"Disabled"));
@@ -208,7 +200,7 @@ int ar_init_debugfs(void)
     return 0;
 }
 
-void inline ar_remove_debugfs(void){
+inline void ar_remove_debugfs(void){
     debugfs_remove_recursive(ar_dir);
 }
 

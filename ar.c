@@ -360,6 +360,36 @@ void stop_regulation(u8 cpu_id){
     hrtimer_cancel(&cinfo->reg_timer);
     pr_info("%s: Exit: (CPU %u)",__func__,cpu_id );
 }
+
+/* New wrapper function that coordinates regulation start */
+void start_all_regulation(void){
+    pr_info("%s: Starting regulation for all cores", __func__);
+    
+    /* Signal master thread to unthrottle cores and begin regulation */
+    master_start_regulation();
+    
+    /* Start per-core timers */
+    for (u8 cpu_id = 1; cpu_id <= 4; cpu_id++) {
+        start_regulation(cpu_id);
+    }
+    
+    pr_info("%s: All cores regulation started", __func__);
+}
+
+void stop_all_regulation(void){
+    pr_info("%s: Stopping regulation for all cores", __func__);
+    
+    /* Stop master thread regulation */
+    master_stop_regulation();
+    
+    /* Stop per-core timers */
+    for (u8 cpu_id = 1; cpu_id <= 4; cpu_id++) {
+        stop_regulation(cpu_id);
+    }
+    
+    pr_info("%s: All cores regulation stopped", __func__);
+}
+
 /**************************************************************************************************************************
  * Module main
  **************************************************************************************************************************/
@@ -407,13 +437,13 @@ static int __init ar_init (void ){
         return -ENOMEM;
     }
 
-    /* Initialize the master thread */
+    /* Initialize the master thread - this will throttle all cores */
     initialize_master();
 
     /* Create entries in debugfs */
     ar_init_debugfs();
 
-    pr_info("Module Initialized\n");
+    pr_info("Module Initialized - All cores throttled, waiting for regulation start\n");
     return 0;
 
 }
@@ -443,4 +473,3 @@ module_exit(ar_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Sudarshan S <sudarshan.srinivasan@research.iiit.ac.in>");
-

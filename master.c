@@ -7,6 +7,10 @@
 
 static struct task_struct* mthread = NULL;
 
+/* Master thread state management */
+static atomic_t master_state = ATOMIC_INIT(MASTER_STATE_INITIAL);
+static wait_queue_head_t master_wait_queue;
+
 /* External Functions */
 extern u64 estimate(u64* feat, u8 feat_len, double *wm, u8 wm_len, u8 index);
 extern void update_weight_matrix(s64 error,struct core_info* cinfo );
@@ -21,15 +25,61 @@ extern u64 g_bw_max_mb[MAX_NO_CPUS+1]; /*Pre-defined max Bandwidth per core in M
 static int master_thread_func(void * data) {
     pr_info("%s: Enter",__func__);
 
-    //    sched_set_fifo(current);
+    /* Step 1: Immediately throttle all 4 cores */
+    pr_info("%s: Throttling all cores at startup", __func__);
+    for (u8 cpu_id = 1; cpu_id <= 4; cpu_id++) {
+        struct core_info* cinfo = get_core_info(cpu_id);
+        if (cinfo) {
+            __throttle((void*)cinfo);
+            pr_info("%s: CPU(%d) throttled", __func__, cpu_id);
+        }
+    }
+
+    /* Step 2: Wait in INITIAL state until regulation is enabled */
+    pr_info("%s: Entering INITIAL state, waiting for regulation to start", __func__);
+    wait_event_interruptible(master_wait_queue,
+                             atomic_read(&master_state) == MASTER_STATE_RUNNING
+                             || kthread_should_stop());
+
+    if (kthread_should_stop()) {
+	pr_info("%s: Exit",__func__);
+        return 0;
+    }
+
+    /* Step 3: Unthrottle all cores when regulation begins */
+    pr_info("%s: Regulation enabled, unthrottling all cores", __func__);
+    for (u8 cpu_id = 1; cpu_id <= 4; cpu_id++) {
+        struct core_info* cinfo = get_core_info(cpu_id);
+        if (cinfo) {
+            __unthrottle((void*)cinfo);
+            pr_info("%s: CPU(%d) unthrottled", __func__, cpu_id);
+        }
+    }
+
+
+    /* Step 4: Begin normal regulation loop */
+    pr_info("%s: Starting normal regulation loop", __func__);
+
 
     while (!kthread_should_stop() ) {
         u8 cpu_id;
-        if (kthread_should_stop()){
-        	pr_info("Stopping thread %s\n",__func__);
-            break;
+        
+        /* Check if we should pause regulation */
+        if (atomic_read(&master_state) != MASTER_STATE_RUNNING) {
+            pr_info("%s: Regulation paused, waiting...", __func__);
+            wait_event_interruptible(master_wait_queue,
+                                     atomic_read(&master_state) == MASTER_STATE_RUNNING
+                                     || kthread_should_stop());
+            if (kthread_should_stop()) {
+                break;
+            }
+            pr_info("%s: Regulation resumed", __func__);
         }
 
+        if (kthread_should_stop()){
+            pr_info("Stopping thread %s\n",__func__);
+            break;
+        }
 
         for_each_online_cpu(cpu_id){
             s64 bw_total_req = 0;
@@ -122,20 +172,47 @@ static int master_thread_func(void * data) {
 void initialize_master(void){
 
     const u8 cpu_id_zero  = 0; //cpuid= 1,2,3 4 are reserved for BW regulation
+    
+    /* Initialize wait queue for master thread state changes */
+    init_waitqueue_head(&master_wait_queue);
+    
+    /* Set initial state */
+    atomic_set(&master_state, MASTER_STATE_INITIAL);
+    
     mthread = kthread_create_on_node(master_thread_func,
                                        (void*)NULL,
                                        cpu_to_node(cpu_id_zero),
                                        "areg_master_thread/%d",cpu_id_zero);
-	BUG_ON(IS_ERR(mthread));
-	kthread_bind(mthread, cpu_id_zero);
+    BUG_ON(IS_ERR(mthread));
+    kthread_bind(mthread, cpu_id_zero);
     wake_up_process(mthread);
 
+    pr_info("%s: Master thread initialized in INITIAL state", __func__);
 }
 
 void deinitialize_master(void){
     if (mthread){
+        /* Wake up master thread if it's waiting */
+        atomic_set(&master_state, MASTER_STATE_STOPPED);
+        wake_up_interruptible(&master_wait_queue);
+        
         kthread_stop(mthread);
         mthread = NULL;
     }
     pr_info("%s: Exit!",__func__ );
+}
+
+void master_start_regulation(void){
+    pr_info("%s: Starting regulation", __func__);
+    atomic_set(&master_state, MASTER_STATE_RUNNING);
+    wake_up_interruptible(&master_wait_queue);
+}
+
+void master_stop_regulation(void){
+    pr_info("%s: Stopping regulation", __func__);
+    atomic_set(&master_state, MASTER_STATE_INITIAL);
+}
+
+int master_get_state(void){
+    return atomic_read(&master_state);
 }

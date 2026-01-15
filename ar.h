@@ -76,6 +76,10 @@ struct core_info *get_core_info(u8 cpu_id);
 void start_regulation(u8 cpu_id);
 void stop_regulation(u8 cpu_id);
 
+/* New wrapper functions for coordinated regulation start/stop */
+void start_all_regulation(void);
+void stop_all_regulation(void);
+
 
 struct bw_distribution {
   u32 time;
