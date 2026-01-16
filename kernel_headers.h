@@ -52,5 +52,11 @@
 #define AR_DEBUG(fmt, ...) do { } while (0)
 #endif
 
+/* x86 MWAIT/MONITOR support */
+#if defined(__x86_64__) || defined(__i386__)
+#include <asm/mwait.h>
+#include <asm/cpufeature.h>
+#endif
+
 
 #endif //ADAPTIVEREGULATOR_KERNEL_HEADERS_H

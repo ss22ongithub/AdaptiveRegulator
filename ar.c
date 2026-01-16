@@ -172,14 +172,28 @@ static int throttler_task_func1(void * data){
         if (kthread_should_stop())
             break;
 
-        AR_DEBUG("CPU(%d):Throttling...\n",cpu_id);
-       while (atomic_read(&cinfo->throttler_task)
-                 && !kthread_should_stop())
-       {
-           smp_mb();
-           cpu_relax();
-           /* TODO: mwait */
+        AR_DEBUG("CPU(%d):Throttling with MWAIT...\n",cpu_id);
+       
+       /* Use x86 MWAIT instruction for power-efficient throttling */
+       while (atomic_read(&cinfo->throttler_task) && !kthread_should_stop()) {
+           if (boot_cpu_has(X86_FEATURE_MWAIT)) {
+               /* MONITOR: Set up address to watch */
+               __monitor(&cinfo->throttler_task, 0, 0);
+               
+               /* Recheck after MONITOR to avoid race */
+               smp_mb();
+               if (atomic_read(&cinfo->throttler_task) && !kthread_should_stop()) {
+                   /* MWAIT: Enter low-power state until memory write */
+                   __mwait(0, 0);
+               }
+           } else {
+               /* Fallback if MWAIT not available */
+               cpu_relax();
+               cond_resched();
+           }
        }
+       
+       AR_DEBUG("CPU(%d):Unthrottled\n",cpu_id);
     }
 
     pr_info("%s: Exit",__func__);
@@ -398,6 +412,15 @@ static int __init ar_init (void ){
 
     pr_info("Supported CPUs: %d, online_cpus: %d\n", NR_CPUS, num_online_cpus());
 //    pr_info("FPU supported : %d",kernel_fpu_available());
+#if defined(__x86_64__) || defined(__i386__)
+    if (boot_cpu_has(X86_FEATURE_MWAIT)) {
+        pr_info("MWAIT instruction supported - using hardware-efficient throttling\n");
+    } else {
+        pr_warn("MWAIT instruction NOT supported - using fallback throttling method\n");
+    }
+#else
+    pr_info("Non-x86 architecture detected - MWAIT not available\n");
+#endif
 
     //Initialise core infos
     memset(all_cinfo, 0, sizeof(all_cinfo));
