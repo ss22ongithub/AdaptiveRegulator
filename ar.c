@@ -300,10 +300,6 @@ static int  setup_cpu_info(const u8 cpu_id){
     wake_up_process(cinfo->throttler_thread);
 #endif
 
-    /* Initialize the regulation timer. However the timer will be started using @ __start_timer() */
-    hrtimer_init(&cinfo->reg_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL_PINNED);
-    cinfo->reg_timer.function = &new_ar_regu_timer_callback;
-
     /***** Regulation to be started by setting
     /sys/kernel/debug/ar/enable_regulation to 1 ****/
 
@@ -325,11 +321,6 @@ static void deinitialize_cpu_info( const u8 cpu_id){
     /* As much as possible keep the de-initialization in the reverse sequence of initialization
      * Refer: setup_cpu_info()
      * */
-    
-    // Stop the timer. 
-    // WARNING: Ensure timer is intialized before cancelling
-    
-    hrtimer_cancel(&cinfo->reg_timer);
     
     //End the throttle thread
     if(cinfo->throttler_thread){
@@ -356,8 +347,9 @@ void start_regulation(u8 cpu_id){
     enable_event(cinfo->read_event);
     enable_event(cinfo->cycles_l3miss_event);
 
-    /* Start the timer on the specific core*/
-    smp_call_function_single(cpu_id,__start_timer_on_cpu,(void*)(long)cpu_id,false);
+    /* Note: Timers are not used in this design.
+     * Master thread controls throttling/unthrottling */
+
     pr_info("%s: Exit: (CPU %u)",__func__,cpu_id );
 }
 
@@ -369,9 +361,7 @@ void stop_regulation(u8 cpu_id){
     perf_event_disable(cinfo->read_event);
     perf_event_disable(cinfo->cycles_l3miss_event);
 
-    /* Stop the timer running on the specific core. Even if the timer
-     is pinned to a core , it can be cancelled from any other core*/
-    hrtimer_cancel(&cinfo->reg_timer);
+    /* Note: Timers are not used in this design */
     pr_info("%s: Exit: (CPU %u)",__func__,cpu_id );
 }
 
@@ -382,7 +372,7 @@ void start_all_regulation(void){
     /* Signal master thread to unthrottle cores and begin regulation */
     master_start_regulation();
     
-    /* Start per-core timers */
+    /* Enable perf counters for all cores */
     for (u8 cpu_id = 1; cpu_id <= 4; cpu_id++) {
         start_regulation(cpu_id);
     }
@@ -396,7 +386,7 @@ void stop_all_regulation(void){
     /* Stop master thread regulation */
     master_stop_regulation();
     
-    /* Stop per-core timers */
+    /* Disable perf counters for all cores */
     for (u8 cpu_id = 1; cpu_id <= 4; cpu_id++) {
         stop_regulation(cpu_id);
     }
