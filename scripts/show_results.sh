@@ -285,7 +285,7 @@ function print_usage() {
 
 export rundt=""
 export fname_csv="fg_ipc.csv"
-export BASE_DATA_PATH="/home/ss22/Workspace/data/with_ar"
+export BASE_DATA_PATH="/home/ss22/Workspace/data/with_memguard"
 export benchmark_bg="519.lbm_r"
 
 # Parse optional arguments
@@ -315,7 +315,7 @@ done
 for benchmark in "${benchmarks_all[@]}";
 do
   	if [[ "$benchmark" == "$benchmark_bg" ]]; then
-    	echo "Skipping $benchmark .."
+    	echo "Skipping background task $benchmark .."
 		continue
   	fi
 	# echo "==================================================$benchmark START========================================="
