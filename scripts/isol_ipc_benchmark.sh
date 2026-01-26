@@ -6,7 +6,7 @@ export SPEC=$SPEC
 export CPU_CORE_FOREGROUND=1
 
 export BASE_DATA_PATH=/home/ss22/Workspace/data/
-export MEMG_PATH=without_memguard/
+export MEMG_PATH=without_regulation/
 
 export benchmarks_all=(
 "500.perlbench_r"
