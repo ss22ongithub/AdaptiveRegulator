@@ -22,5 +22,5 @@ dataprocessing/
 scripts/fg_bg.csv
 send_files.sh
 tmp/
-
+cmake-build-debug
 
