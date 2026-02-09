@@ -42,7 +42,7 @@ static int master_thread_func(void * data) {
                              || kthread_should_stop());
 
     if (kthread_should_stop()) {
-	pr_info("%s: Exit",__func__);
+	    pr_info("%s: Exit",__func__);
         return 0;
     }
 

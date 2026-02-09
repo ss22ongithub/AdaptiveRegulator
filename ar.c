@@ -36,7 +36,9 @@
 static void deinitialize_cpu_info(const u8 cpu_id);
 static int  setup_cpu_info(const u8 cpu_id);
 static void ar_handle_read_overflow(struct irq_work *entry);
+#if 0
 static enum hrtimer_restart new_ar_regu_timer_callback(struct hrtimer *timer);
+#endif
 
 /**************************************************************************
  * External Function Declarations
@@ -47,9 +49,11 @@ static enum hrtimer_restart new_ar_regu_timer_callback(struct hrtimer *timer);
  **************************************************************************/
 
 static int g_read_counter_id = PMU_LLC_MISS_COUNTER_ID;
-
+static int g_total_available_bw_mb = 3000;
 
 module_param(g_read_counter_id, hexint,  S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
+module_param(g_total_available_bw_mb, int, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
+MODULE_PARM_DESC(g_total_available_bw_mb, "Total Memory BW Available in the system");
 
 u64 g_bw_intial_setpoint_mb[MAX_NO_CPUS+1] = {0,1000,1000,1000,1000}; /*Pre-defined initial / min Bandwidth in MB/s */
 u64 g_bw_max_mb[MAX_NO_CPUS+1] = {0,30000,30000,30000,30000}; /*Pre-defined max Bandwidth per core in MB/s */
@@ -104,7 +108,7 @@ void __unthrottle( void* cpu) {
 
 
 /**************************************************************************/
-
+#if 0
 static void __start_timer_on_cpu(void* cpu)
 {
     u8 cpu_id = (u8)(uintptr_t)cpu;
@@ -117,11 +121,12 @@ static void __start_timer_on_cpu(void* cpu)
                       HRTIMER_MODE_REL_PINNED);
 
 }
+#endif
 
 /**************************************************************************
  * Callbacks and Handlers
  **************************************************************************/
-
+#if 0
 static enum hrtimer_restart new_ar_regu_timer_callback(struct hrtimer *timer)
 {
     u8 cpu_id = smp_processor_id();
@@ -151,6 +156,7 @@ static enum hrtimer_restart new_ar_regu_timer_callback(struct hrtimer *timer)
     /*Re-enabled the timer*/
     return HRTIMER_RESTART;
 }
+#endif
 
 
 static int throttler_task_func1(void * data){
@@ -188,8 +194,8 @@ static int throttler_task_func1(void * data){
                }
            } else {
                /* Fallback if MWAIT not available */
+               smp_mb();
                cpu_relax();
-               cond_resched();
            }
        }
        
