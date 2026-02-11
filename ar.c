@@ -49,10 +49,10 @@ static enum hrtimer_restart new_ar_regu_timer_callback(struct hrtimer *timer);
  **************************************************************************/
 
 static int g_read_counter_id = PMU_LLC_MISS_COUNTER_ID;
-static int g_total_available_bw_mb = 3000;
+ulong g_total_available_bw_mb = 3000;
 
 module_param(g_read_counter_id, hexint,  S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
-module_param(g_total_available_bw_mb, int, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
+module_param(g_total_available_bw_mb, ulong, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
 MODULE_PARM_DESC(g_total_available_bw_mb, "Total Memory BW Available in the system");
 
 u64 g_bw_intial_setpoint_mb[MAX_NO_CPUS+1] = {0,1000,1000,1000,1000}; /*Pre-defined initial / min Bandwidth in MB/s */
@@ -229,9 +229,7 @@ static void ar_handle_read_overflow(struct irq_work *entry)
         AR_DEBUG("%s: CPU(%d) not expected here\n",__func__,cpu_id);
         return;
     }
-
     BUG_ON(in_nmi() || !in_irq());
-    AR_DEBUG("\n");
 
     struct core_info *cinfo = get_core_info(cpu_id);
     BUG_ON(!cinfo);

@@ -10,6 +10,7 @@ static struct task_struct* mthread = NULL;
 /* Master thread state management */
 static atomic_t master_state = ATOMIC_INIT(MASTER_STATE_INITIAL);
 static wait_queue_head_t master_wait_queue;
+/**/
 
 /* External Functions */
 extern u64 estimate(u64* feat, u8 feat_len, double *wm, u8 wm_len, u8 index);
@@ -95,14 +96,15 @@ static int master_thread_func(void * data) {
                     struct perf_event* read_event = cinfo->read_event;
                     struct perf_event* cycles_l3miss_event = cinfo->cycles_l3miss_event;
 
+                    /* Stop the counter*/
+                    cinfo->read_event->pmu->stop(cinfo->read_event,PERF_EF_UPDATE);
+
                     cinfo->g_read_count_old = cinfo->g_read_count_new;
                     cinfo->g_read_count_new = convert_events_to_mb( perf_event_count(read_event)) ;
                     cinfo->g_read_count_used = cinfo->g_read_count_new -
                                                cinfo->g_read_count_old;
 
                     u64 cycles_l3miss_count = perf_event_count(cycles_l3miss_event);
-
-
 
                     bw_total_req += cinfo->g_read_count_used;
 
@@ -125,13 +127,22 @@ static int master_thread_func(void * data) {
                     // 	AR_DEBUG("CPU(%u): Estimated(%u) = %lld > Max Limit \n",cpu_id, cinfo->next_estimate);
                     // 	cinfo->next_estimate = g_bw_max_mb[cpu_id];
                     // }
-                    s64 allocation = 0 ;
-                    if (bw_total_req >= BW_TOTAL_AVAILABLE){
-                        allocation = (cinfo->next_estimate/bw_total_req)* BW_TOTAL_AVAILABLE;
-                    }else {
+                    u64 per_core_limit = 1000 ;
+                    u64 allocation = per_core_limit;
+                    if (cinfo->next_estimate < per_core_limit)
+                    {
                         allocation = cinfo->next_estimate;
                     }
-                    atomic64_set(&cinfo->budget_est, convert_mb_to_events(allocation));
+                    g_total_available_bw_mb += max(0,per_core_limit - allocation);
+
+                    /* Allocate the budget */
+                    local64_set(&cinfo->read_event->hw.period_left, convert_mb_to_events(allocation));
+
+                    //un-throttle if the core is in throttle state
+                    atomic_set(&cinfo->throttler_task,false);
+
+                    /*Re-enabled the counter*/
+                    cinfo->read_event->pmu->start(cinfo->read_event, PERF_EF_RELOAD);
 
                     s64 error = cinfo->g_read_count_used - cinfo->prev_estimate;
                     update_weight_matrix(error,cinfo);
@@ -147,14 +158,15 @@ static int master_thread_func(void * data) {
                     (cinfo->ri)++;
                     cinfo->ri = (cinfo->ri == HIST_SIZE)? 0:cinfo->ri;
 
-                    AR_DEBUG("CPU(%u):Used=%llu nxt_est=%lld err=%lld w0=%s w1=%s w2=%s w3=%s w4=%s treq=%lld alloc=%lld cycles_l3miss_count=%llu \n",
+                    AR_DEBUG("CPU(%u):Used=%llu nxt_est=%lld err=%lld w0=%s w1=%s w2=%s w3=%s w4=%s treq=%lld alloc=%lld cycles_l3miss_count=%llu,G=%lu \n",
                                  cpu_id,
                                  cinfo->g_read_count_used,
                                  cinfo->next_estimate,
                                  error,
                                  buf[0],buf[1],buf[2],buf[3], buf[4],
                                  bw_total_req,allocation,
-                                 cycles_l3miss_count);
+                                 cycles_l3miss_count,
+                                 g_total_available_bw_mb);
                     cinfo->prev_estimate=cinfo->next_estimate;
                     break;
                 default:
