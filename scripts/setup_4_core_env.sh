@@ -31,6 +31,16 @@ execute_config() {
    echo $end_msg
 }
 
+ stop_all_unwanted_services(){
+   execute_config "Truning off Snapd..." "systemctl disable --now snapd.service snapd.socket"
+   execute_config "Turn Off rootkit deamon " "systemctl stop rtkit-daemon"
+   execute_config "Turn Off CUPS"  "systemctl stop cups"
+
+
+}
+
+
+##############################################################################################################
 
 main_setup(){
 
@@ -72,6 +82,8 @@ execute_config "Disable CPU core 5" "echo 0 >  /sys/devices/system/cpu/cpu5/onli
    cset set -l 
 
    sleep 1
+
+   stop_all_unwanted_services
 
 
 }
