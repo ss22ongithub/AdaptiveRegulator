@@ -6,6 +6,7 @@ import argparse
 import re
 import glob
 import csv
+import pandas as pd
 
 # Configuration
 BASE_DATA_PATH = "~/Workspace/data/"
@@ -108,6 +109,110 @@ def extract_ipc_from_file(filepath):
         return None, None
 
 
+def find_llc_file(base_path, benchmark, rundt, verbose=False):
+    """
+    Find the LLC statistics CSV file for a given benchmark and run directory.
+    
+    Args:
+        base_path: Base data path
+        benchmark: Benchmark name
+        rundt: Run directory timestamp
+        verbose: Enable debug output
+    
+    Returns:
+        Path to LLC CSV file or None if not found
+    """
+    pattern = os.path.join(base_path, benchmark, rundt, "*llc*.csv")
+    if verbose:
+        print(f"[DEBUG] find_llc_file pattern: {pattern}")
+    try:
+        result = subprocess.check_output(
+            f"ls -t {pattern} 2>/dev/null | head -n 1",
+            shell=True,
+            text=True
+        ).strip()
+        if result:
+            return result
+    except subprocess.CalledProcessError:
+        return None
+
+
+def extract_llc_stats_from_file(filepath, verbose=False):
+    """
+    Extract LLC statistics from CSV file.
+    
+    Args:
+        filepath: Path to the LLC CSV file
+        verbose: Enable debug output
+    
+    Returns:
+        Tuple of (llc_load_misses, llc_store_misses, imc_reads, imc_writes) or (None, None, None, None)
+    """
+    try:
+        import pandas as pd
+        
+        # Read CSV file
+        cols = ['time', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
+        drop_cols = ['C', 'E', 'F', 'G', 'H']
+        
+        df = pd.read_csv(filepath, sep=',', comment='#', names=cols)
+        
+        if verbose:
+            print(f"[DEBUG] Original DataFrame shape: {df.shape}")
+            print(f"[DEBUG] Original DataFrame columns: {df.columns.tolist()}")
+            print(f"[DEBUG] Original DataFrame head:\n{df.head()}")
+        
+        df.drop(columns=drop_cols, inplace=True)
+        
+        # Pivot the dataframe
+        pivoted_df = df.pivot(index='time', columns='D', values='B')
+        
+        if verbose:
+            print(f"[DEBUG] Pivoted DataFrame shape: {pivoted_df.shape}")
+            print(f"[DEBUG] Pivoted DataFrame columns: {pivoted_df.columns.tolist()}")
+            print(f"[DEBUG] Pivoted DataFrame head:\n{pivoted_df.head()}")
+        
+        # Calculate means
+        llc_load_misses = pivoted_df['LLC-load-misses'].mean()
+        llc_store_misses = pivoted_df['LLC-store-misses'].mean()
+        imc_reads = pivoted_df['uncore_imc/data_reads/'].mean()
+        imc_writes = pivoted_df['uncore_imc/data_writes/'].mean()
+        
+        if verbose:
+            print(f"[DEBUG] LLC stats - load: {llc_load_misses:.2f}, store: {llc_store_misses:.2f}, "
+                  f"reads: {imc_reads:.2f}, writes: {imc_writes:.2f}")
+        
+        return (f"{llc_load_misses:.2f}", f"{llc_store_misses:.2f}", 
+                f"{imc_reads:.2f}", f"{imc_writes:.2f}")
+        
+    except Exception as e:
+        if verbose:
+            print(f"[DEBUG] Error extracting LLC stats: {e}")
+        return None, None, None, None
+
+
+def get_benchmark_llc_stats(base_path, benchmark, rundt, verbose=False):
+    """
+    Get LLC statistics for a specific benchmark and run directory.
+    
+    Args:
+        base_path: Base data path
+        benchmark: Benchmark name
+        rundt: Run directory timestamp
+        verbose: Enable debug output
+    
+    Returns:
+        Tuple of (llc_load_misses, llc_store_misses, imc_reads, imc_writes) or (None, None, None, None)
+    """
+    llc_file = find_llc_file(base_path, benchmark, rundt, verbose)
+    if verbose:
+        print(f"[DEBUG] get_benchmark_llc_stats llc_file: {llc_file}")
+    if not llc_file:
+        return None, None, None, None
+
+    return extract_llc_stats_from_file(llc_file, verbose)
+
+
 def find_ipc_file(base_path, benchmark, rundt, verbose=False):
     """
     Find the most recent IPC file for a given benchmark and run directory.
@@ -142,7 +247,7 @@ def find_ipc_file(base_path, benchmark, rundt, verbose=False):
 
 def get_benchmark_ipc(base_path, benchmark, rundt, verbose=False):
     """
-ml    Get IPC value and execution time for a specific benchmark and run directory.
+    Get IPC value and execution time for a specific benchmark and run directory.
     
     Args:
         base_path: Base data path
@@ -178,7 +283,7 @@ def get_background_rundt(foreground_rundt, foreground_benchmark):
 
 def process_benchmark_pair(base_path, fg_benchmark, bg_benchmark, rundt=None, verbose=False):
     """
-    Process a foreground/background benchmark pair and extract IPC values and execution times.
+    Process a foreground/background benchmark pair and extract IPC values, execution times, and LLC stats.
     
     Args:
         base_path: Base data path
@@ -211,6 +316,10 @@ def process_benchmark_pair(base_path, fg_benchmark, bg_benchmark, rundt=None, ve
     if fg_ipc is None:
         return None
     
+    # Get foreground LLC statistics
+    fg_llc_load, fg_llc_store, fg_imc_reads, fg_imc_writes = get_benchmark_llc_stats(
+        base_path, fg_benchmark, current_rundt, verbose)
+    
     # Get background IPC and execution time
     # Extract just the directory name from current_rundt if it's a full path
     rundt_name = os.path.basename(current_rundt) if current_rundt else None
@@ -224,10 +333,19 @@ def process_benchmark_pair(base_path, fg_benchmark, bg_benchmark, rundt=None, ve
     
     bg_ipc = None
     bg_exec_time = None
+    bg_llc_load = None
+    bg_llc_store = None
+    bg_imc_reads = None
+    bg_imc_writes = None
+    
     if bg_rundt_full:
         bg_ipc, bg_exec_time = get_benchmark_ipc(base_path, bg_benchmark, bg_rundt_full, verbose)
         if verbose:
             print(f"[DEBUG] bg_ipc: {bg_ipc}, bg_exec_time: {bg_exec_time}")
+        
+        # Get background LLC statistics
+        bg_llc_load, bg_llc_store, bg_imc_reads, bg_imc_writes = get_benchmark_llc_stats(
+            base_path, bg_benchmark, bg_rundt_full, verbose)
     
     # if bg_ipc is None:
     #     return None
@@ -236,9 +354,17 @@ def process_benchmark_pair(base_path, fg_benchmark, bg_benchmark, rundt=None, ve
         'fg_benchmark': fg_benchmark,
         'fg_ipc': fg_ipc,
         'fg_exec_time': fg_exec_time,
+        'fg_llc_load_misses': fg_llc_load,
+        'fg_llc_store_misses': fg_llc_store,
+        'fg_imc_reads': fg_imc_reads,
+        'fg_imc_writes': fg_imc_writes,
         'bg_benchmark': bg_benchmark,
         'bg_ipc': bg_ipc,
         'bg_exec_time': bg_exec_time,
+        'bg_llc_load_misses': bg_llc_load,
+        'bg_llc_store_misses': bg_llc_store,
+        'bg_imc_reads': bg_imc_reads,
+        'bg_imc_writes': bg_imc_writes,
         'rundt': current_rundt
     }
 
@@ -255,7 +381,11 @@ def print_results(results, verbose=False):
         for result in results:
             if result:
                 print(f"{result['fg_benchmark']}, {result['fg_ipc']}, {result['fg_exec_time']}, "
-                      f"{result['bg_benchmark']}, {result['bg_ipc']}, {result['bg_exec_time']}")
+                      f"{result['fg_llc_load_misses']}, {result['fg_llc_store_misses']}, "
+                      f"{result['fg_imc_reads']}, {result['fg_imc_writes']}, "
+                      f"{result['bg_benchmark']}, {result['bg_ipc']}, {result['bg_exec_time']}, "
+                      f"{result['bg_llc_load_misses']}, {result['bg_llc_store_misses']}, "
+                      f"{result['bg_imc_reads']}, {result['bg_imc_writes']}")
 
 
 def write_results_to_csv(results, output_file, verbose=False):
@@ -274,7 +404,9 @@ def write_results_to_csv(results, output_file, verbose=False):
     
     with open(output_file, 'w', newline='') as csvfile:
         # Write header with # prefix
-        csvfile.write("# fg_workload, fg_IPC, fg_exec_time, bg_workload, bg_IPC, bg_exec_time\n")
+        csvfile.write("# fg_workload, fg_IPC, fg_exec_time, fg_LLC_load_misses, fg_LLC_store_misses, "
+                     "fg_imc_reads, fg_imc_writes, bg_workload, bg_IPC, bg_exec_time, "
+                     "bg_LLC_load_misses, bg_LLC_store_misses, bg_imc_reads, bg_imc_writes\n")
         
         # Write data rows
         writer = csv.writer(csvfile)
@@ -284,9 +416,17 @@ def write_results_to_csv(results, output_file, verbose=False):
                     result['fg_benchmark'],
                     result['fg_ipc'],
                     result['fg_exec_time'],
+                    result['fg_llc_load_misses'],
+                    result['fg_llc_store_misses'],
+                    result['fg_imc_reads'],
+                    result['fg_imc_writes'],
                     result['bg_benchmark'],
                     result['bg_ipc'],
-                    result['bg_exec_time']
+                    result['bg_exec_time'],
+                    result['bg_llc_load_misses'],
+                    result['bg_llc_store_misses'],
+                    result['bg_imc_reads'],
+                    result['bg_imc_writes']
                 ])
     
     if verbose:
