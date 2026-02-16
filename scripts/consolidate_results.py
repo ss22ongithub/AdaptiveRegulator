@@ -47,7 +47,7 @@ Output Format:
     - slowdown_ratio: runalone_ipc / regulated_ipc
     - degradation_percent: ((runalone - regulated) / runalone) × 100
 
-Author: SPEC Benchmark Analysis Tool
+
 Date: 2026-01-26
 """
 

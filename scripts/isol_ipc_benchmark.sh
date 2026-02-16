@@ -8,6 +8,10 @@ export CPU_CORE_FOREGROUND=1
 export BASE_DATA_PATH=/home/ss22/Workspace/data/
 export MEMG_PATH=without_regulation/
 
+export benchmarks_single=(
+"500.perlbench_r"
+)
+
 export benchmarks_all=(
 "500.perlbench_r"
 "502.gcc_r"
@@ -149,6 +153,8 @@ function cleanup() {
     	FILEPATH=$1
     	grep "LLC-load-misses"	$FILEPATH > "$FILEPATH.lm"
     	grep "LLC-store-misses"	$FILEPATH > "$FILEPATH.sm"
+		grep "uncore_imc/data_reads/" $FILEPATH > "$FILEPATH.imc_dr"
+		grep "uncore_imc/data_writes/" $FILEPATH > "$FILEPATH.imc_wr"
  	fi
 }
 
@@ -217,7 +223,7 @@ function run_benchmark() {
 	export BENCHMARK_NAME=$1
 	export rundt=$2
 	export dt=`date +"%Y-%m-%d-%H-%M-%S"`
-	export ITERATIONS=10
+	export ITERATIONS=5
 	export INTERVAL_MSEC=1000
 	export RUN_DATA_PATH="$BASE_DATA_PATH$MEMG_PATH$BENCHMARK_NAME/RUN-$rundt"
 
@@ -230,7 +236,7 @@ function run_benchmark() {
 	# monitor the LLC cache misses 
 	export PERF_LLC_FILEPATH="$RUN_DATA_PATH/$BENCHMARK_NAME-llc$dry_run-$dt.csv"
 	
-	perf stat -x, -e  LLC-load-misses,LLC-store-misses -C $CPU_CORE_FOREGROUND -I $INTERVAL_MSEC -o $PERF_LLC_FILEPATH &
+	perf stat -x, -e  LLC-load-misses,LLC-store-misses,uncore_imc/data_reads/,uncore_imc/data_writes/ -C $CPU_CORE_FOREGROUND -I $INTERVAL_MSEC -o $PERF_LLC_FILEPATH &
 	export PERF_LLC_PID=$!
 	echo "PERF Recording LLC Misses $PERF_LLC_FILEPATH PID ($PERF_LLC_PID) on Core ($CPU_CORE_FOREGROUND)"
     	sleep 1
@@ -264,7 +270,7 @@ export benchmarks_bg=(
 "519.lbm_r"
 )
 
-for benchmark in "${benchmarks_all[@]}";
+for benchmark in "${benchmarks_single[@]}";
 do
  	echo "============================================$benchmark START============================================"
  	run_benchmark $benchmark $rundt
