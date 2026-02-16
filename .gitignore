@@ -6,7 +6,8 @@ Module.symvers
 *.mod
 *.mod.c
 modules.order
-
+*.csv
+*.png
 
 # Ignore IDE files
 .idea/
@@ -22,5 +23,6 @@ dataprocessing/
 scripts/fg_bg.csv
 send_files.sh
 tmp/
+refactorings/
 cmake-build-debug
 
