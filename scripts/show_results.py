@@ -80,24 +80,32 @@ def get_latest_rundt(base_path, benchmark):
 
 
 def extract_ipc_from_file(filepath):
-    """Extract IPC value from perf output file"""
+    """Extract IPC value and execution time from perf output file"""
     try:
         with open(filepath, 'r') as f:
             content = f.read()
         
+        # Extract IPC
+        ipc = None
         # Look for "insn per cycle" pattern
         match = re.search(r'insn per cycle\s+#\s+([\d.]+)', content)
         if match:
-            return match.group(1)
+            ipc = match.group(1)
+        else:
+            # Alternative pattern
+            match = re.search(r'([\d.]+)\s+insn per cycle', content)
+            if match:
+                ipc = match.group(1)
         
-        # Alternative pattern
-        match = re.search(r'([\d.]+)\s+insn per cycle', content)
-        if match:
-            return match.group(1)
+        # Extract execution time
+        exec_time = None
+        time_match = re.search(r'([\d.]+)\s+seconds time elapsed', content)
+        if time_match:
+            exec_time = time_match.group(1)
         
-        return None
+        return ipc, exec_time
     except FileNotFoundError:
-        return None
+        return None, None
 
 
 def find_ipc_file(base_path, benchmark, rundt, verbose=False):
@@ -134,7 +142,7 @@ def find_ipc_file(base_path, benchmark, rundt, verbose=False):
 
 def get_benchmark_ipc(base_path, benchmark, rundt, verbose=False):
     """
-    Get IPC value for a specific benchmark and run directory.
+ml    Get IPC value and execution time for a specific benchmark and run directory.
     
     Args:
         base_path: Base data path
@@ -143,13 +151,13 @@ def get_benchmark_ipc(base_path, benchmark, rundt, verbose=False):
         verbose: Enable debug output
     
     Returns:
-        IPC value as string or None if not found
+        Tuple of (IPC value as string, execution time as string) or (None, None) if not found
     """
     ipc_file = find_ipc_file(base_path, benchmark, rundt, verbose)
     if verbose:
         print(f"[DEBUG] get_benchmark_ipc ipc_file: {ipc_file}")
     if not ipc_file:
-        return None
+        return None, None
 
     return extract_ipc_from_file(ipc_file)
 
@@ -170,7 +178,7 @@ def get_background_rundt(foreground_rundt, foreground_benchmark):
 
 def process_benchmark_pair(base_path, fg_benchmark, bg_benchmark, rundt=None, verbose=False):
     """
-    Process a foreground/background benchmark pair and extract IPC values.
+    Process a foreground/background benchmark pair and extract IPC values and execution times.
     
     Args:
         base_path: Base data path
@@ -196,14 +204,14 @@ def process_benchmark_pair(base_path, fg_benchmark, bg_benchmark, rundt=None, ve
     if verbose:
         print(f"[DEBUG] current_rundt: {current_rundt}")
 
-    # Get foreground IPC
-    fg_ipc = get_benchmark_ipc(base_path, fg_benchmark, current_rundt, verbose)
+    # Get foreground IPC and execution time
+    fg_ipc, fg_exec_time = get_benchmark_ipc(base_path, fg_benchmark, current_rundt, verbose)
     if verbose:
-        print(f"[DEBUG] fg_ipc: {fg_ipc}")
+        print(f"[DEBUG] fg_ipc: {fg_ipc}, fg_exec_time: {fg_exec_time}")
     if fg_ipc is None:
         return None
     
-    # Get background IPC
+    # Get background IPC and execution time
     # Extract just the directory name from current_rundt if it's a full path
     rundt_name = os.path.basename(current_rundt) if current_rundt else None
     bg_rundt = get_background_rundt(rundt_name, fg_benchmark)
@@ -215,10 +223,11 @@ def process_benchmark_pair(base_path, fg_benchmark, bg_benchmark, rundt=None, ve
         print(f"[DEBUG] bg_rundt: {bg_rundt}, bg_rundt_full: {bg_rundt_full}")
     
     bg_ipc = None
+    bg_exec_time = None
     if bg_rundt_full:
-        bg_ipc = get_benchmark_ipc(base_path, bg_benchmark, bg_rundt_full, verbose)
+        bg_ipc, bg_exec_time = get_benchmark_ipc(base_path, bg_benchmark, bg_rundt_full, verbose)
         if verbose:
-            print(f"[DEBUG] bg_ipc: {bg_ipc}")
+            print(f"[DEBUG] bg_ipc: {bg_ipc}, bg_exec_time: {bg_exec_time}")
     
     # if bg_ipc is None:
     #     return None
@@ -226,8 +235,10 @@ def process_benchmark_pair(base_path, fg_benchmark, bg_benchmark, rundt=None, ve
     return {
         'fg_benchmark': fg_benchmark,
         'fg_ipc': fg_ipc,
+        'fg_exec_time': fg_exec_time,
         'bg_benchmark': bg_benchmark,
         'bg_ipc': bg_ipc,
+        'bg_exec_time': bg_exec_time,
         'rundt': current_rundt
     }
 
@@ -243,8 +254,8 @@ def print_results(results, verbose=False):
     if verbose:
         for result in results:
             if result:
-                print(f"{result['fg_benchmark']}, {result['fg_ipc']}, "
-                  f"{result['bg_benchmark']}, {result['bg_ipc']}")
+                print(f"{result['fg_benchmark']}, {result['fg_ipc']}, {result['fg_exec_time']}, "
+                      f"{result['bg_benchmark']}, {result['bg_ipc']}, {result['bg_exec_time']}")
 
 
 def write_results_to_csv(results, output_file, verbose=False):
@@ -263,7 +274,7 @@ def write_results_to_csv(results, output_file, verbose=False):
     
     with open(output_file, 'w', newline='') as csvfile:
         # Write header with # prefix
-        csvfile.write("# fg_workload, fg_IPC, bg_workload, bg_IPC\n")
+        csvfile.write("# fg_workload, fg_IPC, fg_exec_time, bg_workload, bg_IPC, bg_exec_time\n")
         
         # Write data rows
         writer = csv.writer(csvfile)
@@ -272,8 +283,10 @@ def write_results_to_csv(results, output_file, verbose=False):
                 writer.writerow([
                     result['fg_benchmark'],
                     result['fg_ipc'],
+                    result['fg_exec_time'],
                     result['bg_benchmark'],
-                    result['bg_ipc']
+                    result['bg_ipc'],
+                    result['bg_exec_time']
                 ])
     
     if verbose:
